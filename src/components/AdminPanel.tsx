@@ -169,8 +169,8 @@ interface FranchiseUser {
   regionName: string;
   franchiseId: string;
   franchiseName: string;
-  balance?: number;
-  discountPercent?: number;
+  //balance?: number;
+  //discountPercent?: number;
 }
 
 export default function AdminPanel() {
