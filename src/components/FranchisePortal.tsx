@@ -81,6 +81,35 @@ export default function FranchisePortal() {
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [paymentScreenshotUrl, setPaymentScreenshotUrl] = useState("");
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [isAssigned, setIsAssigned] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!auth.currentUser?.email) return;
+    
+    const emailLower = auth.currentUser.email.toLowerCase();
+    const q = query(collection(db, "franchiseUsers"), where("email", "==", emailLower));
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      if (!snapshot.empty) {
+        const userData = snapshot.docs[0].data();
+        const region = regions.find(r => r.id === userData.regionId);
+        const franchise = region?.franchises.find(f => f.id === userData.franchiseId);
+        
+        if (region && franchise) {
+          setSelectedRegion(region);
+          setSelectedFranchise(franchise);
+          setIsAssigned(true);
+          if (step === 1) setStep(2);
+        } else {
+          setIsAssigned(false);
+        }
+      } else {
+        setIsAssigned(false);
+      }
+    });
+    
+    return () => unsubscribe();
+  }, [auth.currentUser, step]);
 
   useEffect(() => {
     if (!auth.currentUser) return;
@@ -143,7 +172,7 @@ export default function FranchisePortal() {
     setIsPlacingOrder(true);
 
     const discountAmount = (totalAmount * discountPercent) / 100;
-    const finalAmount = totalAmount - discountAmount + balanceAdjustment;
+    const finalAmount = totalAmount - discountAmount - balanceAdjustment;
 
     // Sanitize payload to ensure no undefined values are sent to Firestore
     const newOrder = {
@@ -440,8 +469,24 @@ export default function FranchisePortal() {
       </nav>
 
       <main className="pt-24 px-4 max-w-7xl mx-auto relative z-10">
-        <AnimatePresence mode="wait">
-          {showHistory ? (
+        {isAssigned === false ? (
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="max-w-md mx-auto mt-20 text-center space-y-6 bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100"
+          >
+            <div className="w-20 h-20 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6">
+              <LogOut className="w-10 h-10" />
+            </div>
+            <h2 className="text-2xl font-black text-slate-900">Access Denied</h2>
+            <p className="text-slate-500 leading-relaxed">
+              Your email address (<span className="font-bold text-slate-900">{auth.currentUser?.email}</span>) is not assigned to any franchise. 
+              Please contact the administrator to grant you access to your franchise portal.
+            </p>
+          </motion.div>
+        ) : (
+          <AnimatePresence mode="wait">
+            {showHistory ? (
             <motion.div key="history" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
               <h2 className="text-2xl font-bold">Purchase Records</h2>
               <div className="grid gap-4">
@@ -923,13 +968,13 @@ export default function FranchisePortal() {
                                 />
                               </div>
                               <div>
-                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Balance Adjustment (Rs.)</label>
+                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Balance Used / Credit (Rs.)</label>
                                 <input 
                                   type="number" 
                                   value={balanceAdjustment}
                                   onChange={(e) => setBalanceAdjustment(Number(e.target.value))}
                                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-600 outline-none transition-all"
-                                  placeholder="e.g. -500 or 1000"
+                                  placeholder="e.g. 500"
                                 />
                               </div>
                             </div>
@@ -955,14 +1000,14 @@ export default function FranchisePortal() {
                           )}
                           {balanceAdjustment !== 0 && (
                             <div className="flex justify-between text-sm text-teal-600">
-                              <span className="font-bold uppercase tracking-widest text-[10px]">Balance Adj.</span>
-                              <span className="font-bold">{balanceAdjustment > 0 ? '+' : '-'} Rs. {Math.abs(balanceAdjustment).toLocaleString()}</span>
+                              <span className="font-bold uppercase tracking-widest text-[10px]">Balance Used</span>
+                              <span className="font-bold">- Rs. {Math.abs(balanceAdjustment).toLocaleString()}</span>
                             </div>
                           )}
                           <div className="pt-3 border-t border-slate-100 flex justify-between items-end">
                             <span className="text-slate-900 font-black uppercase tracking-widest text-sm">Net Total</span>
                             <span className="text-3xl font-black text-teal-600 leading-none">
-                              Rs. {(totalAmount - (totalAmount * discountPercent / 100) + balanceAdjustment).toLocaleString()}
+                              Rs. {(totalAmount - (totalAmount * discountPercent / 100) - balanceAdjustment).toLocaleString()}
                             </span>
                           </div>
                         </div>
@@ -1017,7 +1062,7 @@ export default function FranchisePortal() {
                       </div>
                       <div>
                         <p className="text-sm text-slate-500 font-bold uppercase tracking-wider">Total Amount to Pay</p>
-                        <p className="text-3xl font-black text-slate-900">Rs. {(totalAmount - (totalAmount * discountPercent) / 100 + balanceAdjustment).toLocaleString()}</p>
+                        <p className="text-3xl font-black text-slate-900">Rs. {(totalAmount - (totalAmount * discountPercent) / 100 - balanceAdjustment).toLocaleString()}</p>
                       </div>
                     </div>
 
@@ -1238,6 +1283,7 @@ export default function FranchisePortal() {
             </div>
           )}
         </AnimatePresence>
+        )}
       </main>
     </div>
   );
