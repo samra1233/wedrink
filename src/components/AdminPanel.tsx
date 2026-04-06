@@ -1,12 +1,15 @@
 import { useState, useEffect, useMemo } from "react";
 import { db, auth } from "../firebase";
-import { signOut } from "firebase/auth";
-import { collection, onSnapshot, query, orderBy, doc, updateDoc, getDoc, setDoc } from "firebase/firestore";
+import { signOut, createUserWithEmailAndPassword } from "firebase/auth";
+import { initializeApp, getApp, getApps } from "firebase/app";
+import { getAuth } from "firebase/auth";
+import { collection, onSnapshot, query, orderBy, doc, updateDoc, getDoc, setDoc, addDoc, deleteDoc } from "firebase/firestore";
 import { motion, AnimatePresence } from "framer-motion";
-import { Store, BarChart3, Search, Package, DollarSign, Clock, LogOut, Box, Plus, Minus, RefreshCw, X, History, MapPin, LayoutDashboard, ClipboardList, Wrench, Shirt, ArrowRight, Edit2, Check, Save, Trash2, FileText, FileSpreadsheet } from "lucide-react";
+import { Store, BarChart3, Search, Package, DollarSign, Clock, LogOut, Box, Plus, Minus, RefreshCw, X, History, MapPin, LayoutDashboard, ClipboardList, Wrench, Shirt, ArrowRight, Edit2, Check, Save, Trash2, FileText, FileSpreadsheet, Users } from "lucide-react";
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+import { regions } from "../data";
 
 interface Order {
   id: string;
@@ -158,10 +161,23 @@ const initialInventoryData: InventoryItem[] = [
   { id: 'UNI019', name: 'office Jackets XL', quantity: 0, type: 'uniform' },
 ];
 
+interface FranchiseUser {
+  id: string;
+  email: string;
+  password?: string;
+  regionId: string;
+  regionName: string;
+  franchiseId: string;
+  franchiseName: string;
+  balance?: number;
+  discountPercent?: number;
+}
+
 export default function AdminPanel() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
-  const [activeTab, setActiveTab] = useState<'orders' | 'history' | 'franchise' | 'region' | 'inventory' | 'revenue'>('orders');
+  const [franchiseUsers, setFranchiseUsers] = useState<FranchiseUser[]>([]);
+  const [activeTab, setActiveTab] = useState<'orders' | 'history' | 'franchise' | 'region' | 'inventory' | 'revenue' | 'users'>('orders');
   const [selectedFranchiseForDetail, setSelectedFranchiseForDetail] = useState<string | null>(null);
   const [inventoryCategory, setInventoryCategory] = useState<'all' | 'raw' | 'equipment' | 'uniform'>('all');
   const [franchiseCategoryFilter, setFranchiseCategoryFilter] = useState<'all' | 'Raw Material' | 'Equipment' | 'Uniform'>('all');
@@ -174,6 +190,9 @@ export default function AdminPanel() {
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [isAddingItem, setIsAddingItem] = useState(false);
   const [newItem, setNewItem] = useState<Partial<InventoryItem>>({ name: '', quantity: 0, type: 'raw' });
+  const [isAddingUser, setIsAddingUser] = useState(false);
+  const [newUser, setNewUser] = useState<Partial<FranchiseUser>>({ email: '', password: '', regionId: '', franchiseId: '', balance: 0, discountPercent: 0 });
+  const [editingUser, setEditingUser] = useState<FranchiseUser | null>(null);
   const [ledgerDateFilter, setLedgerDateFilter] = useState("");
   const [ledgerMonthFilter, setLedgerMonthFilter] = useState("");
 
@@ -190,6 +209,14 @@ export default function AdminPanel() {
     const unsubscribe = onSnapshot(collection(db, "inventory"), (snapshot) => {
       const invData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InventoryItem));
       setInventory(invData);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "franchiseUsers"), (snapshot) => {
+      const usersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as FranchiseUser));
+      setFranchiseUsers(usersData);
     });
     return () => unsubscribe();
   }, []);
@@ -251,6 +278,70 @@ export default function AdminPanel() {
     await setDoc(doc(db, "inventory", id), { ...newItem, id });
     setIsAddingItem(false);
     setNewItem({ name: '', quantity: 0, type: 'raw' });
+  };
+
+  const addUser = async () => {
+    if (!newUser.email || !newUser.password || !newUser.regionId || !newUser.franchiseId) return;
+    
+    const region = regions.find(r => r.id === newUser.regionId);
+    const franchise = region?.franchises.find(f => f.id === newUser.franchiseId);
+    
+    if (!region || !franchise) return;
+
+    const emailLower = newUser.email.toLowerCase().trim();
+
+    try {
+      // Create user in Firebase Auth using a secondary app instance
+      // This prevents the current admin from being logged out
+      const secondaryConfig = {
+        apiKey: "AIzaSyAakFasuwjBerQkZu6KVMzH1SE-c_F8qK0",
+        authDomain: "wedrink-2bf78.firebaseapp.com",
+        projectId: "wedrink-2bf78",
+        storageBucket: "wedrink-2bf78.firebasestorage.app",
+        messagingSenderId: "197930332464",
+        appId: "1:197930332464:web:7140973f02afa3a4c9d8f5",
+      };
+
+      const secondaryApp = getApps().find(app => app.name === 'secondary') || initializeApp(secondaryConfig, 'secondary');
+      const secondaryAuth = getAuth(secondaryApp);
+      
+      await createUserWithEmailAndPassword(secondaryAuth, emailLower, newUser.password);
+      
+      // Save to Firestore
+      await addDoc(collection(db, "franchiseUsers"), {
+        email: emailLower,
+        password: newUser.password,
+        regionId: region.id,
+        regionName: region.name,
+        franchiseId: franchise.id,
+        franchiseName: franchise.name,
+        balance: newUser.balance || 0,
+        discountPercent: newUser.discountPercent || 0
+      });
+      
+      setIsAddingUser(false);
+      setNewUser({ email: '', password: '', regionId: '', franchiseId: '', balance: 0, discountPercent: 0 });
+    } catch (error: any) {
+      console.error("Error adding user: ", error);
+      alert(error.message || "Failed to create user account.");
+    }
+  };
+
+  const deleteUser = async (userId: string) => {
+    try {
+      await deleteDoc(doc(db, "franchiseUsers", userId));
+    } catch (error) {
+      console.error("Error deleting user: ", error);
+    }
+  };
+
+  const updateUser = async (userId: string, updates: Partial<FranchiseUser>) => {
+    try {
+      await updateDoc(doc(db, "franchiseUsers", userId), updates);
+      setEditingUser(null);
+    } catch (error) {
+      console.error("Error updating user: ", error);
+    }
   };
 
   const exportOrderToPDF = (order: Order) => {
@@ -570,7 +661,8 @@ export default function AdminPanel() {
               { id: 'franchise', icon: Store, label: 'Franchise Ledger' },
               { id: 'region', icon: MapPin, label: 'Region Reports' },
               { id: 'revenue', icon: DollarSign, label: 'Revenue Ledger' },
-              { id: 'inventory', icon: Box, label: 'Inventory' }
+              { id: 'inventory', icon: Box, label: 'Inventory' },
+              { id: 'users', icon: Users, label: 'User Management' }
             ].map(tab => (
               <button 
                 key={tab.id} 
@@ -1453,11 +1545,256 @@ export default function AdminPanel() {
             </div>
           </motion.div>
         )}
+
+        {activeTab === 'users' && (
+          <motion.div
+            key="users"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="space-y-8"
+          >
+            <div className="flex justify-between items-center bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-teal-50 text-teal-600 rounded-2xl flex items-center justify-center">
+                  <Users className="w-6 h-6" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-black text-slate-900">Franchise Users</h2>
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">Manage portal access</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsAddingUser(true)}
+                className="bg-slate-900 text-white px-6 py-3 rounded-xl font-bold hover:bg-slate-800 transition-colors flex items-center gap-2"
+              >
+                <Plus className="w-5 h-5" />
+                Add User
+              </button>
+            </div>
+
+            <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-100">
+                    <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Email</th>
+                    <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Password</th>
+                    <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Region</th>
+                    <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Franchise</th>
+                    <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Balance</th>
+                    <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Discount</th>
+                    <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {franchiseUsers.map((user) => (
+                    <tr key={user.id} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="px-8 py-5">
+                        <p className="font-bold text-slate-900">{user.email}</p>
+                      </td>
+                      <td className="px-8 py-5">
+                        <code className="bg-slate-100 px-2 py-1 rounded text-xs font-mono text-slate-600">
+                          {user.password || '••••••••'}
+                        </code>
+                      </td>
+                      <td className="px-8 py-5">
+                        <span className="px-3 py-1 bg-slate-100 text-slate-600 rounded-lg text-xs font-bold">
+                          {user.regionName}
+                        </span>
+                      </td>
+                      <td className="px-8 py-5">
+                        <span className="px-3 py-1 bg-teal-50 text-teal-700 rounded-lg text-xs font-bold">
+                          {user.franchiseName}
+                        </span>
+                      </td>
+                      <td className="px-8 py-5">
+                        <p className="font-bold text-teal-600">Rs. {(user.balance || 0).toLocaleString()}</p>
+                      </td>
+                      <td className="px-8 py-5">
+                        <p className="font-bold text-slate-600">{user.discountPercent || 0}%</p>
+                      </td>
+                      <td className="px-8 py-5 text-right">
+                        <div className="flex justify-end gap-2">
+                          <button 
+                            onClick={() => setEditingUser(user)}
+                            className="p-2 text-teal-600 hover:bg-teal-50 rounded-xl transition-colors"
+                          >
+                            <Edit2 className="w-5 h-5" />
+                          </button>
+                          <button 
+                            onClick={() => deleteUser(user.id)}
+                            className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-colors"
+                          >
+                            <Trash2 className="w-5 h-5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {franchiseUsers.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="px-8 py-12 text-center text-slate-500 font-bold">
+                        No users assigned yet.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </motion.div>
+        )}
       </AnimatePresence>
     </main>
 
       {/* Modals */}
       <AnimatePresence>
+        {isAddingUser && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-[2.5rem] w-full max-w-md overflow-hidden shadow-2xl"
+            >
+              <div className="bg-slate-900 p-8 text-white flex justify-between items-center">
+                <div>
+                  <h3 className="text-2xl font-black">Add User</h3>
+                  <p className="text-teal-400 font-bold uppercase text-xs tracking-widest mt-1">Franchise Access</p>
+                </div>
+                <button onClick={() => setIsAddingUser(false)} className="p-2 hover:bg-white/10 rounded-xl transition-colors">
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+              <div className="p-8 space-y-6">
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Gmail Address</label>
+                  <input 
+                    type="email"
+                    value={newUser.email}
+                    onChange={(e) => setNewUser({...newUser, email: e.target.value})}
+                    placeholder="franchise@gmail.com"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Password</label>
+                  <input 
+                    type="text"
+                    value={newUser.password}
+                    onChange={(e) => setNewUser({...newUser, password: e.target.value})}
+                    placeholder="Set Password"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Region</label>
+                  <select 
+                    value={newUser.regionId}
+                    onChange={(e) => setNewUser({...newUser, regionId: e.target.value, franchiseId: ''})}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  >
+                    <option value="">Select Region</option>
+                    {regions.map(r => (
+                      <option key={r.id} value={r.id}>{r.name}</option>
+                    ))}
+                  </select>
+                </div>
+                {newUser.regionId && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Franchise</label>
+                    <select 
+                      value={newUser.franchiseId}
+                      onChange={(e) => setNewUser({...newUser, franchiseId: e.target.value})}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                    >
+                      <option value="">Select Franchise</option>
+                      {regions.find(r => r.id === newUser.regionId)?.franchises.map(f => (
+                        <option key={f.id} value={f.id}>{f.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Initial Balance (Rs.)</label>
+                    <input 
+                      type="number"
+                      value={newUser.balance}
+                      onChange={(e) => setNewUser({...newUser, balance: Number(e.target.value)})}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Discount (%)</label>
+                    <input 
+                      type="number"
+                      value={newUser.discountPercent}
+                      onChange={(e) => setNewUser({...newUser, discountPercent: Number(e.target.value)})}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                    />
+                  </div>
+                </div>
+                <button 
+                  onClick={addUser}
+                  disabled={!newUser.email || !newUser.password || !newUser.regionId || !newUser.franchiseId}
+                  className="w-full bg-teal-600 text-white py-4 rounded-2xl font-bold text-lg hover:bg-teal-700 transition-all shadow-lg shadow-teal-200 disabled:opacity-50"
+                >
+                  Save User
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {editingUser && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-[2.5rem] w-full max-w-md overflow-hidden shadow-2xl"
+            >
+              <div className="bg-slate-900 p-8 text-white flex justify-between items-center">
+                <div>
+                  <h3 className="text-2xl font-black">Edit Franchise User</h3>
+                  <p className="text-teal-400 font-bold uppercase text-xs tracking-widest mt-1">{editingUser.email}</p>
+                </div>
+                <button onClick={() => setEditingUser(null)} className="p-2 hover:bg-white/10 rounded-xl transition-colors">
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+              <div className="p-8 space-y-6">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Balance (Rs.)</label>
+                    <input 
+                      type="number"
+                      value={editingUser.balance}
+                      onChange={(e) => setEditingUser({...editingUser, balance: Number(e.target.value)})}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Discount (%)</label>
+                    <input 
+                      type="number"
+                      value={editingUser.discountPercent}
+                      onChange={(e) => setEditingUser({...editingUser, discountPercent: Number(e.target.value)})}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                    />
+                  </div>
+                </div>
+                <button 
+                  onClick={() => updateUser(editingUser.id, { balance: editingUser.balance, discountPercent: editingUser.discountPercent })}
+                  className="w-full bg-teal-600 text-white py-4 rounded-2xl font-bold text-lg hover:bg-teal-700 transition-all shadow-lg shadow-teal-200"
+                >
+                  Update User
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
         {editingItem && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <motion.div 
