@@ -173,11 +173,32 @@ interface FranchiseUser {
   discountPercent?: number;
 }
 
+interface AdminPermissions {
+  orders: boolean;
+  history: boolean;
+  franchise: boolean;
+  region: boolean;
+  inventory: boolean;
+  revenue: boolean;
+  users: boolean;
+  admins: boolean;
+}
+
+interface AdminUser {
+  id: string;
+  email: string;
+  role: 'super_admin' | 'admin';
+  permissions: AdminPermissions;
+  password?: string;
+}
+
 export default function AdminPanel() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [franchiseUsers, setFranchiseUsers] = useState<FranchiseUser[]>([]);
-  const [activeTab, setActiveTab] = useState<'orders' | 'history' | 'franchise' | 'region' | 'inventory' | 'revenue' | 'users'>('orders');
+  const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
+  const [currentAdmin, setCurrentAdmin] = useState<AdminUser | null>(null);
+  const [activeTab, setActiveTab] = useState<'orders' | 'history' | 'franchise' | 'region' | 'inventory' | 'revenue' | 'users' | 'admins'>('orders');
   const [selectedFranchiseForDetail, setSelectedFranchiseForDetail] = useState<string | null>(null);
   const [inventoryCategory, setInventoryCategory] = useState<'all' | 'raw' | 'equipment' | 'uniform'>('all');
   const [franchiseCategoryFilter, setFranchiseCategoryFilter] = useState<'all' | 'Raw Material' | 'Equipment' | 'Uniform'>('all');
@@ -194,6 +215,23 @@ export default function AdminPanel() {
   const [newUser, setNewUser] = useState<Partial<FranchiseUser>>({ email: '', password: '', regionId: '', franchiseId: '', balance: 0, discountPercent: 0 });
   const [editingUser, setEditingUser] = useState<FranchiseUser | null>(null);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
+  const [isAddingAdmin, setIsAddingAdmin] = useState(false);
+  const [newAdmin, setNewAdmin] = useState<Partial<AdminUser>>({
+    email: '',
+    password: '',
+    role: 'admin',
+    permissions: {
+      orders: true,
+      history: true,
+      franchise: false,
+      region: false,
+      inventory: false,
+      revenue: false,
+      users: false,
+      admins: false
+    }
+  });
+  const [editingAdmin, setEditingAdmin] = useState<AdminUser | null>(null);
 
   const handleUpdateOrder = async () => {
     if (!editingOrder) return;
@@ -282,6 +320,98 @@ export default function AdminPanel() {
     });
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "adminUsers"), (snapshot) => {
+      const usersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AdminUser));
+      setAdminUsers(usersData);
+      
+      const current = usersData.find(u => u.email === auth.currentUser?.email);
+      if (current) {
+        setCurrentAdmin(current);
+      } else if (auth.currentUser?.email === "samra20020413@gmail.com") {
+        const superAdmin: AdminUser = {
+          id: auth.currentUser.uid,
+          email: auth.currentUser.email!,
+          role: 'super_admin',
+          permissions: {
+            orders: true,
+            history: true,
+            franchise: true,
+            region: true,
+            inventory: true,
+            revenue: true,
+            users: true,
+            admins: true
+          }
+        };
+        setCurrentAdmin(superAdmin);
+        setDoc(doc(db, "adminUsers", auth.currentUser.uid), superAdmin);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleAddAdmin = async () => {
+    if (!newAdmin.email || !newAdmin.password) return;
+    try {
+      const secondaryApp = initializeApp(getApp().options, 'secondary');
+      const secondaryAuth = getAuth(secondaryApp);
+      const userCredential = await createUserWithEmailAndPassword(secondaryAuth, newAdmin.email, newAdmin.password);
+      
+      const adminData: AdminUser = {
+        id: userCredential.user.uid,
+        email: newAdmin.email,
+        role: 'admin',
+        permissions: newAdmin.permissions as AdminPermissions,
+        password: newAdmin.password
+      };
+      
+      await setDoc(doc(db, "adminUsers", userCredential.user.uid), adminData);
+      setIsAddingAdmin(false);
+      setNewAdmin({
+        email: '',
+        password: '',
+        role: 'admin',
+        permissions: {
+          orders: true,
+          history: true,
+          franchise: false,
+          region: false,
+          inventory: false,
+          revenue: false,
+          users: false,
+          admins: false
+        }
+      });
+      await secondaryAuth.signOut();
+    } catch (error) {
+      console.error("Error adding admin:", error);
+      alert("Failed to add admin user.");
+    }
+  };
+
+  const handleUpdateAdmin = async () => {
+    if (!editingAdmin) return;
+    try {
+      await updateDoc(doc(db, "adminUsers", editingAdmin.id), {
+        permissions: editingAdmin.permissions
+      });
+      setEditingAdmin(null);
+    } catch (error) {
+      console.error("Error updating admin:", error);
+    }
+  };
+
+  const handleDeleteAdmin = async (adminId: string) => {
+    if (window.confirm("Are you sure you want to delete this admin?")) {
+      try {
+        await deleteDoc(doc(db, "adminUsers", adminId));
+      } catch (error) {
+        console.error("Error deleting admin:", error);
+      }
+    }
+  };
 
   const seedInventory = async () => {
     setIsSeeding(true);
@@ -518,8 +648,267 @@ export default function AdminPanel() {
     XLSX.writeFile(workbook, `Invoice_Order_${order.id.slice(-8)}.xlsx`);
   };
 
+  const exportInventoryToPDF = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(22);
+    doc.setTextColor(13, 148, 136);
+    doc.text("WEDRINK INVENTORY REPORT", 14, 20);
+    doc.setFontSize(10);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 28);
+
+    const tableColumn = ["ID", "Name", "Category", "Quantity"];
+    const tableRows = inventory.map(item => [
+      item.id,
+      item.name,
+      item.type.toUpperCase(),
+      item.quantity.toString()
+    ]);
+
+    autoTable(doc, {
+      startY: 35,
+      head: [tableColumn],
+      body: tableRows,
+      theme: 'grid',
+      headStyles: { fillColor: [13, 148, 136] }
+    });
+
+    doc.save(`Inventory_Report_${new Date().toISOString().slice(0, 10)}.pdf`);
+  };
+
+  const exportInventoryToExcel = () => {
+    const worksheetData = [
+      ["WEDRINK INVENTORY REPORT"],
+      [`Generated on: ${new Date().toLocaleString()}`],
+      [],
+      ["ID", "Name", "Category", "Quantity"],
+      ...inventory.map(item => [item.id, item.name, item.type, item.quantity])
+    ];
+    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Inventory");
+    XLSX.writeFile(workbook, `Inventory_Report_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
+  const exportFranchiseLedgerToPDF = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(22);
+    doc.setTextColor(13, 148, 136);
+    doc.text("FRANCHISE PURCHASE LEDGER", 14, 20);
+    doc.setFontSize(10);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 28);
+
+    const tableColumn = ["Franchise Name", "Raw Material", "Equipment", "Uniform", "Total Investment"];
+    const tableRows = franchiseReport.map(item => [
+      item.name,
+      `Rs. ${item.categories['Raw Material'].toLocaleString()}`,
+      `Rs. ${item.categories['Equipment'].toLocaleString()}`,
+      `Rs. ${item.categories['Uniform'].toLocaleString()}`,
+      `Rs. ${item.total.toLocaleString()}`
+    ]);
+
+    autoTable(doc, {
+      startY: 35,
+      head: [tableColumn],
+      body: tableRows,
+      theme: 'grid',
+      headStyles: { fillColor: [13, 148, 136] }
+    });
+
+    doc.save(`Franchise_Ledger_${new Date().toISOString().slice(0, 10)}.pdf`);
+  };
+
+  const exportFranchiseLedgerToExcel = () => {
+    const worksheetData = [
+      ["FRANCHISE PURCHASE LEDGER"],
+      [`Generated on: ${new Date().toLocaleString()}`],
+      [],
+      ["Franchise Name", "Raw Material", "Equipment", "Uniform", "Total Investment"],
+      ...franchiseReport.map(item => [
+        item.name,
+        item.categories['Raw Material'],
+        item.categories['Equipment'],
+        item.categories['Uniform'],
+        item.total
+      ])
+    ];
+    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Franchise Ledger");
+    XLSX.writeFile(workbook, `Franchise_Ledger_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
+  const exportRegionReportToPDF = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(22);
+    doc.setTextColor(13, 148, 136);
+    doc.text("REGION PERFORMANCE REPORT", 14, 20);
+    doc.setFontSize(10);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 28);
+
+    const tableColumn = ["Region Name", "Raw Material", "Equipment", "Uniform", "Total Sales"];
+    const tableRows = regionReport.map(item => [
+      item.name,
+      `Rs. ${item.categories['Raw Material'].toLocaleString()}`,
+      `Rs. ${item.categories['Equipment'].toLocaleString()}`,
+      `Rs. ${item.categories['Uniform'].toLocaleString()}`,
+      `Rs. ${item.total.toLocaleString()}`
+    ]);
+
+    autoTable(doc, {
+      startY: 35,
+      head: [tableColumn],
+      body: tableRows,
+      theme: 'grid',
+      headStyles: { fillColor: [13, 148, 136] }
+    });
+
+    doc.save(`Region_Report_${new Date().toISOString().slice(0, 10)}.pdf`);
+  };
+
+  const exportRegionReportToExcel = () => {
+    const worksheetData = [
+      ["REGION PERFORMANCE REPORT"],
+      [`Generated on: ${new Date().toLocaleString()}`],
+      [],
+      ["Region Name", "Raw Material", "Equipment", "Uniform", "Total Sales"],
+      ...regionReport.map(item => [
+        item.name,
+        item.categories['Raw Material'],
+        item.categories['Equipment'],
+        item.categories['Uniform'],
+        item.total
+      ])
+    ];
+    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Region Report");
+    XLSX.writeFile(workbook, `Region_Report_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
+  const exportRevenueLedgerToPDF = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(22);
+    doc.setTextColor(13, 148, 136);
+    doc.text("WEDRINK REVENUE LEDGER", 14, 20);
+    doc.setFontSize(10);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 28);
+    doc.text(`Total Revenue: Rs. ${stats.totalRevenue.toLocaleString()}`, 14, 34);
+
+    const tableColumn = ["Date", "Order ID", "Franchise", "Region", "Amount", "Status"];
+    const tableRows = orders
+      .filter(o => o.status !== 'Cancelled' && o.status !== 'Pending')
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .map(order => [
+        new Date(order.date).toLocaleDateString(),
+        `#${order.id.slice(-8)}`,
+        order.franchiseName,
+        order.regionName,
+        `Rs. ${order.finalAmount.toLocaleString()}`,
+        order.status
+      ]);
+
+    autoTable(doc, {
+      startY: 40,
+      head: [tableColumn],
+      body: tableRows,
+      theme: 'grid',
+      headStyles: { fillColor: [13, 148, 136] }
+    });
+
+    doc.save(`Revenue_Ledger_${new Date().toISOString().slice(0, 10)}.pdf`);
+  };
+
+  const exportRevenueLedgerToExcel = () => {
+    const worksheetData = [
+      ["WEDRINK REVENUE LEDGER"],
+      [`Generated on: ${new Date().toLocaleString()}`],
+      [`Total Revenue: Rs. ${stats.totalRevenue.toLocaleString()}`],
+      [],
+      ["Date", "Order ID", "Franchise", "Region", "Amount", "Status"],
+      ...orders
+        .filter(o => o.status !== 'Cancelled' && o.status !== 'Pending')
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .map(order => [
+          new Date(order.date).toLocaleDateString(),
+          `#${order.id.slice(-8)}`,
+          order.franchiseName,
+          order.regionName,
+          order.finalAmount,
+          order.status
+        ])
+    ];
+    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Revenue Ledger");
+    XLSX.writeFile(workbook, `Revenue_Ledger_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
+  const exportOrderHistoryToPDF = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(22);
+    doc.setTextColor(13, 148, 136);
+    doc.text("WEDRINK ORDER HISTORY", 14, 20);
+    doc.setFontSize(10);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 28);
+
+    const tableColumn = ["Date", "Order ID", "Franchise", "Region", "Amount", "Status"];
+    const tableRows = orders
+      .slice()
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .map(order => [
+        new Date(order.date).toLocaleDateString(),
+        `#${order.id.slice(-8)}`,
+        order.franchiseName,
+        order.regionName,
+        `Rs. ${order.finalAmount.toLocaleString()}`,
+        order.status
+      ]);
+
+    autoTable(doc, {
+      startY: 35,
+      head: [tableColumn],
+      body: tableRows,
+      theme: 'grid',
+      headStyles: { fillColor: [13, 148, 136] }
+    });
+
+    doc.save(`Order_History_${new Date().toISOString().slice(0, 10)}.pdf`);
+  };
+
+  const exportOrderHistoryToExcel = () => {
+    const worksheetData = [
+      ["WEDRINK ORDER HISTORY"],
+      [`Generated on: ${new Date().toLocaleString()}`],
+      [],
+      ["Date", "Order ID", "Franchise", "Region", "Amount", "Status"],
+      ...orders
+        .slice()
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .map(order => [
+          new Date(order.date).toLocaleDateString(),
+          `#${order.id.slice(-8)}`,
+          order.franchiseName,
+          order.regionName,
+          order.finalAmount,
+          order.status
+        ])
+    ];
+    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Order History");
+    XLSX.writeFile(workbook, `Order_History_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
   const filteredOrders = useMemo(() => {
     return orders.filter(o => {
+      // Exclude Cancelled and Delivered from Live Orders
+      if (o.status === 'Cancelled' || o.status === 'Delivered') return false;
+      
       const matchesSearch = o.franchiseName.toLowerCase().includes(search.toLowerCase()) || 
                             o.regionName.toLowerCase().includes(search.toLowerCase());
       const matchesFilter = orderFilter === 'all' || (orderFilter === 'pending' && o.status === 'Pending');
@@ -531,7 +920,8 @@ export default function AdminPanel() {
     const verifiedOrders = orders.filter(o => o.status !== 'Cancelled' && o.status !== 'Pending');
     const totalRevenue = verifiedOrders.reduce((sum, o) => sum + o.finalAmount, 0);
     const pendingOrders = orders.filter(o => o.status === 'Pending').length;
-    return { totalRevenue, pendingOrders, totalOrders: orders.length };
+    const liveOrdersCount = orders.filter(o => o.status !== 'Cancelled' && o.status !== 'Delivered').length;
+    return { totalRevenue, pendingOrders, totalOrders: liveOrdersCount };
   }, [orders]);
 
   const franchiseReport = useMemo(() => {
@@ -702,6 +1092,17 @@ export default function AdminPanel() {
     return Object.entries(grouped).sort((a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime());
   }, [orders]);
 
+  if (!currentAdmin) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-teal-600 border-t-transparent rounded-full animate-spin" />
+          <p className="text-slate-500 font-bold animate-pulse">Verifying Permissions...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex bg-slate-50 min-h-screen selection:bg-teal-100 selection:text-teal-900 font-sans">
       {/* Sidebar Navigation */}
@@ -719,14 +1120,15 @@ export default function AdminPanel() {
 
           <nav className="space-y-2">
             {[
-              { id: 'orders', icon: LayoutDashboard, label: 'Live Orders' },
-              { id: 'history', icon: History, label: 'Order History' },
-              { id: 'franchise', icon: Store, label: 'Franchise Ledger' },
-              { id: 'region', icon: MapPin, label: 'Region Reports' },
-              { id: 'revenue', icon: DollarSign, label: 'Revenue Ledger' },
-              { id: 'inventory', icon: Box, label: 'Inventory' },
-              { id: 'users', icon: Users, label: 'User Management' }
-            ].map(tab => (
+              { id: 'orders', icon: LayoutDashboard, label: 'Live Orders', permission: 'orders' },
+              { id: 'history', icon: History, label: 'Order History', permission: 'history' },
+              { id: 'franchise', icon: Store, label: 'Franchise Ledger', permission: 'franchise' },
+              { id: 'region', icon: MapPin, label: 'Region Reports', permission: 'region' },
+              { id: 'revenue', icon: DollarSign, label: 'Revenue Ledger', permission: 'revenue' },
+              { id: 'inventory', icon: Box, label: 'Inventory', permission: 'inventory' },
+              { id: 'users', icon: Users, label: 'User Management', permission: 'users' },
+              { id: 'admins', icon: Wrench, label: 'Admin Management', permission: 'admins' }
+            ].filter(tab => currentAdmin?.permissions[tab.permission as keyof AdminPermissions]).map(tab => (
               <button 
                 key={tab.id} 
                 onClick={() => {
@@ -793,6 +1195,25 @@ export default function AdminPanel() {
             <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-2xl border border-slate-100 shadow-sm">
               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
               <span className="text-xs font-bold text-slate-600 uppercase tracking-widest">System Online</span>
+            </div>
+          )}
+
+          {activeTab === 'history' && (
+            <div className="flex gap-2">
+              <button 
+                onClick={exportOrderHistoryToPDF}
+                className="px-6 py-3 bg-white text-slate-600 rounded-2xl border border-slate-100 hover:bg-slate-50 transition-all shadow-sm flex items-center gap-2 font-bold text-xs"
+              >
+                <FileText className="w-4 h-4 text-teal-600" />
+                Export PDF
+              </button>
+              <button 
+                onClick={exportOrderHistoryToExcel}
+                className="px-6 py-3 bg-white text-slate-600 rounded-2xl border border-slate-100 hover:bg-slate-50 transition-all shadow-sm flex items-center gap-2 font-bold text-xs"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-green-600" />
+                Export Excel
+              </button>
             </div>
           )}
         </header>
@@ -1000,9 +1421,29 @@ export default function AdminPanel() {
                   <p className="text-sm text-slate-500 font-medium mt-1">Detailed breakdown of all transactions</p>
                 </div>
               </div>
-              <div className="text-right">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Cumulative Revenue</p>
-                <p className="text-4xl font-black text-green-600">Rs. {stats.totalRevenue.toLocaleString()}</p>
+              <div className="text-right flex flex-col items-end gap-3">
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Cumulative Revenue</p>
+                  <p className="text-4xl font-black text-green-600">Rs. {stats.totalRevenue.toLocaleString()}</p>
+                </div>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={exportRevenueLedgerToPDF}
+                    className="p-2.5 bg-white text-slate-600 rounded-xl border border-slate-100 hover:bg-slate-50 transition-all shadow-sm flex items-center gap-2 font-bold text-xs"
+                    title="Export PDF"
+                  >
+                    <FileText className="w-4 h-4 text-teal-600" />
+                    PDF
+                  </button>
+                  <button 
+                    onClick={exportRevenueLedgerToExcel}
+                    className="p-2.5 bg-white text-slate-600 rounded-xl border border-slate-100 hover:bg-slate-50 transition-all shadow-sm flex items-center gap-2 font-bold text-xs"
+                    title="Export Excel"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-green-600" />
+                    Excel
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1139,6 +1580,24 @@ export default function AdminPanel() {
                         Clear
                       </button>
                     )}
+                    <div className="flex gap-2 mt-5">
+                      <button 
+                        onClick={activeTab === 'franchise' ? exportFranchiseLedgerToPDF : exportRegionReportToPDF}
+                        className="p-2.5 bg-white text-slate-600 rounded-xl border border-slate-100 hover:bg-slate-50 transition-all shadow-sm flex items-center gap-2 font-bold text-xs"
+                        title="Export PDF"
+                      >
+                        <FileText className="w-4 h-4 text-teal-600" />
+                        PDF
+                      </button>
+                      <button 
+                        onClick={activeTab === 'franchise' ? exportFranchiseLedgerToExcel : exportRegionReportToExcel}
+                        className="p-2.5 bg-white text-slate-600 rounded-xl border border-slate-100 hover:bg-slate-50 transition-all shadow-sm flex items-center gap-2 font-bold text-xs"
+                        title="Export Excel"
+                      >
+                        <FileSpreadsheet className="w-4 h-4 text-green-600" />
+                        Excel
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -1199,6 +1658,24 @@ export default function AdminPanel() {
                       <Plus className="w-5 h-5" />
                       Add New Item
                     </button>
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={exportInventoryToPDF}
+                        className="p-4 bg-white text-slate-600 rounded-2xl border border-slate-100 hover:bg-slate-50 transition-all shadow-sm flex items-center gap-2 font-bold text-xs"
+                        title="Export PDF"
+                      >
+                        <FileText className="w-5 h-5 text-teal-600" />
+                        PDF
+                      </button>
+                      <button 
+                        onClick={exportInventoryToExcel}
+                        className="p-4 bg-white text-slate-600 rounded-2xl border border-slate-100 hover:bg-slate-50 transition-all shadow-sm flex items-center gap-2 font-bold text-xs"
+                        title="Export Excel"
+                      >
+                        <FileSpreadsheet className="w-5 h-5 text-green-600" />
+                        Excel
+                      </button>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -1706,8 +2183,194 @@ export default function AdminPanel() {
             </div>
           </motion.div>
         )}
+        {activeTab === 'admins' && currentAdmin?.role === 'super_admin' && (
+          <motion.div 
+            key="admins"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="space-y-8"
+          >
+            <div className="flex justify-between items-center">
+              <div>
+                <h2 className="text-3xl font-black text-slate-900 tracking-tight">Admin Management</h2>
+                <p className="text-slate-500 font-medium mt-1">Manage sub-admins and their permissions</p>
+              </div>
+              <button 
+                onClick={() => setIsAddingAdmin(true)}
+                className="px-8 py-4 bg-slate-900 text-white rounded-[1.5rem] font-black hover:bg-slate-800 transition-all flex items-center gap-3 shadow-xl shadow-slate-200"
+              >
+                <Plus className="w-5 h-5" />
+                Add New Admin
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              {adminUsers.filter(u => u.role !== 'super_admin').map(admin => (
+                <div key={admin.id} className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 hover:border-teal-200 hover:shadow-xl transition-all group">
+                  <div className="flex items-center gap-4 mb-6">
+                    <div className="w-14 h-14 bg-teal-50 rounded-2xl flex items-center justify-center text-teal-600">
+                      <Wrench className="w-7 h-7" />
+                    </div>
+                    <div>
+                      <h3 className="font-black text-lg text-slate-900 truncate max-w-[150px]">{admin.email}</h3>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Sub-Admin</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 mb-8">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Permissions</p>
+                    <div className="flex flex-wrap gap-2">
+                      {Object.entries(admin.permissions).map(([key, value]) => (
+                        value && (
+                          <span key={key} className="px-3 py-1 bg-slate-50 text-slate-600 rounded-lg text-[10px] font-bold uppercase tracking-widest border border-slate-100">
+                            {key}
+                          </span>
+                        )
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3">
+                    <button 
+                      onClick={() => setEditingAdmin(admin)}
+                      className="flex-1 py-3 bg-slate-50 text-slate-600 rounded-xl font-bold text-xs hover:bg-teal-50 hover:text-teal-600 transition-all flex items-center justify-center gap-2"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                      Edit Permissions
+                    </button>
+                    <button 
+                      onClick={() => handleDeleteAdmin(admin.id)}
+                      className="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all shadow-sm"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
       </AnimatePresence>
     </main>
+
+    {/* Modals */}
+    {isAddingAdmin && (
+      <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95, y: 20 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          className="bg-white rounded-[2.5rem] p-10 w-full max-w-md shadow-2xl"
+        >
+          <div className="flex justify-between items-center mb-8">
+            <h3 className="text-2xl font-black text-slate-900">Add New Admin</h3>
+            <button onClick={() => setIsAddingAdmin(false)} className="text-slate-400 hover:text-slate-600">
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+          <div className="space-y-6">
+            <div>
+              <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Email Address</label>
+              <input 
+                type="email"
+                value={newAdmin.email}
+                onChange={(e) => setNewAdmin({...newAdmin, email: e.target.value})}
+                placeholder="admin@example.com"
+                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Password</label>
+              <input 
+                type="text"
+                value={newAdmin.password}
+                onChange={(e) => setNewAdmin({...newAdmin, password: e.target.value})}
+                placeholder="Set Password"
+                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500"
+              />
+            </div>
+            
+            <div className="space-y-3">
+              <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Permissions</label>
+              <div className="grid grid-cols-2 gap-3">
+                {Object.keys(newAdmin.permissions || {}).map((perm) => (
+                  <label key={perm} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100 cursor-pointer hover:bg-teal-50 transition-colors">
+                    <input 
+                      type="checkbox"
+                      checked={(newAdmin.permissions as any)[perm]}
+                      onChange={(e) => setNewAdmin({
+                        ...newAdmin,
+                        permissions: {
+                          ...newAdmin.permissions as AdminPermissions,
+                          [perm]: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                    />
+                    <span className="text-xs font-bold text-slate-600 capitalize">{perm}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <button 
+              onClick={handleAddAdmin}
+              disabled={!newAdmin.email || !newAdmin.password}
+              className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold text-lg hover:bg-slate-800 transition-all shadow-lg shadow-slate-200 disabled:opacity-50"
+            >
+              Create Admin
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    )}
+
+    {editingAdmin && (
+      <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95, y: 20 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          className="bg-white rounded-[2.5rem] p-10 w-full max-w-md shadow-2xl"
+        >
+          <div className="flex justify-between items-center mb-8">
+            <h3 className="text-2xl font-black text-slate-900">Edit Permissions</h3>
+            <button onClick={() => setEditingAdmin(null)} className="text-slate-400 hover:text-slate-600">
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+          <div className="space-y-6">
+            <p className="text-sm font-bold text-slate-500">Editing permissions for: <span className="text-slate-900">{editingAdmin.email}</span></p>
+            
+            <div className="grid grid-cols-2 gap-3">
+              {Object.keys(editingAdmin.permissions).map((perm) => (
+                <label key={perm} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100 cursor-pointer hover:bg-teal-50 transition-colors">
+                  <input 
+                    type="checkbox"
+                    checked={(editingAdmin.permissions as any)[perm]}
+                    onChange={(e) => setEditingAdmin({
+                      ...editingAdmin,
+                      permissions: {
+                        ...editingAdmin.permissions,
+                        [perm]: e.target.checked
+                      }
+                    })}
+                    className="w-4 h-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                  />
+                  <span className="text-xs font-bold text-slate-600 capitalize">{perm}</span>
+                </label>
+              ))}
+            </div>
+
+            <button 
+              onClick={handleUpdateAdmin}
+              className="w-full bg-teal-600 text-white py-4 rounded-2xl font-bold text-lg hover:bg-teal-700 transition-all shadow-lg shadow-teal-200"
+            >
+              Update Permissions
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    )}
 
       {/* Modals */}
       <AnimatePresence>
