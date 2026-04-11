@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { onAuthStateChanged } from "firebase/auth";
-import { auth } from "./firebase";
+import { doc, getDoc } from "firebase/firestore";
+import { auth, db } from "./firebase";
 import Login from "./components/Login";
 import AdminPanel from "./components/AdminPanel";
 import FranchisePortal from "./components/FranchisePortal";
@@ -10,10 +11,20 @@ export default function App() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showSplash, setShowSplash] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
+      if (currentUser) {
+        // Check if user is an admin in Firestore
+        const adminDoc = await getDoc(doc(db, "adminUsers", currentUser.uid));
+        if (adminDoc.exists() || currentUser.email === "samra20020413@gmail.com") {
+          setIsAdmin(true);
+        } else {
+          setIsAdmin(false);
+        }
+      }
       setLoading(false);
     });
     return () => unsubscribe();
@@ -34,9 +45,6 @@ export default function App() {
   if (!user) {
     return <Login />;
   }
-
-  // Check for admin email
-  const isAdmin = user.email === "samra20020413@gmail.com";
 
   return isAdmin ? <AdminPanel /> : <FranchisePortal />;
 }
