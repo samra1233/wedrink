@@ -25,7 +25,8 @@ import {
   UploadCloud,
   Copy,
   CreditCard,
-  FileSpreadsheet
+  FileSpreadsheet,
+  X
 } from "lucide-react";
 import { regions, products, Region, Franchise, Product } from "../data";
 import { db, auth } from "../firebase";
@@ -60,7 +61,7 @@ interface Order {
   finalAmount: number;
   date: string;
   status: 'Pending' | 'Processing' | 'Shipped' | 'Delivered';
-  paymentScreenshot?: string;
+  paymentScreenshots?: string[];
   userId: string;
 }
 
@@ -79,9 +80,10 @@ export default function FranchisePortal() {
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
   const [orderError, setOrderError] = useState<string | null>(null);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
-  const [paymentScreenshotUrl, setPaymentScreenshotUrl] = useState("");
+  const [paymentScreenshotUrls, setPaymentScreenshotUrls] = useState<string[]>([]);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [isAssigned, setIsAssigned] = useState<boolean | null>(null);
+  const [selectedOrderDetails, setSelectedOrderDetails] = useState<Order | null>(null);
 
   useEffect(() => {
     if (!auth.currentUser?.email) return;
@@ -233,9 +235,9 @@ export default function FranchisePortal() {
     }
   };
 
-  const handlePayment = async (screenshotUrl: string) => {
-    if (!currentOrderId || !screenshotUrl) {
-      setOrderError("Please provide a valid screenshot URL.");
+  const handlePayment = async (urls: string[]) => {
+    if (!currentOrderId || urls.length === 0) {
+      setOrderError("Please provide at least one valid screenshot.");
       return;
     }
     setIsProcessingPayment(true);
@@ -244,7 +246,7 @@ export default function FranchisePortal() {
       // Add a 30-second timeout to prevent infinite hanging
       await Promise.race([
         updateDoc(doc(db, "orders", currentOrderId), {
-          paymentScreenshot: screenshotUrl,
+          paymentScreenshots: urls,
           status: 'Processing'
         }),
         new Promise<never>((_, reject) => 
@@ -271,6 +273,14 @@ export default function FranchisePortal() {
     setCurrentOrderId(null);
     setDiscountPercent(0);
     setBalanceAdjustment(0);
+    setPaymentScreenshotUrls([]);
+  };
+
+  const payOrder = (order: Order) => {
+    setCurrentOrderId(order.id);
+    setPaymentScreenshotUrls(order.paymentScreenshots || []);
+    setStep(4);
+    setShowHistory(false);
   };
 
   const categories: { id: Product['category'], icon: any, label: string }[] = [
@@ -515,6 +525,22 @@ export default function FranchisePortal() {
                       <p className="text-xl font-black text-slate-900 mt-2">Rs. {order.finalAmount.toLocaleString()}</p>
                     </div>
                     <div className="flex flex-row sm:flex-col gap-2 w-full sm:w-auto">
+                      <button 
+                        onClick={() => setSelectedOrderDetails(order)}
+                        className="flex-1 sm:flex-none px-4 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-xl transition-colors flex items-center justify-center gap-2 text-xs font-bold"
+                      >
+                        <FileText className="w-4 h-4" />
+                        Details
+                      </button>
+                      {(order.status === 'Pending' || order.status === 'Processing') && (
+                        <button 
+                          onClick={() => payOrder(order)}
+                          className="flex-1 sm:flex-none px-4 py-2 bg-teal-600 text-white hover:bg-teal-700 rounded-xl transition-colors flex items-center justify-center gap-2 text-xs font-bold shadow-lg shadow-teal-200"
+                        >
+                          <CreditCard className="w-4 h-4" />
+                          {order.status === 'Pending' ? 'Pay Now' : 'Update Payment'}
+                        </button>
+                      )}
                       <button 
                         onClick={() => exportOrderToPDF(order)}
                         className="flex-1 sm:flex-none px-4 py-2 bg-teal-50 text-teal-600 hover:bg-teal-100 rounded-xl transition-colors flex items-center justify-center gap-2 text-xs font-bold"
@@ -1062,7 +1088,9 @@ export default function FranchisePortal() {
                       </div>
                       <div>
                         <p className="text-sm text-slate-500 font-bold uppercase tracking-wider">Total Amount to Pay</p>
-                        <p className="text-3xl font-black text-slate-900">Rs. {(totalAmount - (totalAmount * discountPercent) / 100 - balanceAdjustment).toLocaleString()}</p>
+                        <p className="text-3xl font-black text-slate-900">
+                          Rs. {(orderHistory.find(o => o.id === currentOrderId)?.finalAmount || (totalAmount - (totalAmount * discountPercent) / 100 - balanceAdjustment)).toLocaleString()}
+                        </p>
                       </div>
                     </div>
 
@@ -1095,63 +1123,73 @@ export default function FranchisePortal() {
                   </motion.div>
 
                   <motion.div variants={itemVariants} className="space-y-4 text-left">
-                    <label className="block text-sm font-bold text-slate-700">Upload Payment Screenshot</label>
-                    <div className="relative">
-                      <input 
-                        type="file" 
-                        accept="image/*"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            if (file.size > 10 * 1024 * 1024) {
-                              alert("File is too large. Please select an image under 10MB.");
-                              return;
-                            }
-                            const reader = new FileReader();
-                            reader.onloadend = () => {
-                              const img = new Image();
-                              img.onload = () => {
-                                const canvas = document.createElement('canvas');
-                                let width = img.width;
-                                let height = img.height;
-                                const MAX_WIDTH = 800;
-                                
-                                if (width > MAX_WIDTH) {
-                                  height = Math.round((height * MAX_WIDTH) / width);
-                                  width = MAX_WIDTH;
+                    <label className="block text-sm font-bold text-slate-700">Upload Payment Screenshots (Up to 3)</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      {[0, 1, 2].map((index) => (
+                        <div key={index} className="relative aspect-square">
+                          <input 
+                            type="file" 
+                            accept="image/*"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                if (file.size > 10 * 1024 * 1024) {
+                                  alert("File is too large. Please select an image under 10MB.");
+                                  return;
                                 }
-                                
-                                canvas.width = width;
-                                canvas.height = height;
-                                const ctx = canvas.getContext('2d');
-                                ctx?.drawImage(img, 0, 0, width, height);
-                                
-                                // Compress to JPEG with 0.6 quality to ensure it fits in Firestore 1MB limit
-                                const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6);
-                                setPaymentScreenshotUrl(compressedBase64);
-                              };
-                              img.src = reader.result as string;
-                            };
-                            reader.readAsDataURL(file);
-                          }
-                        }}
-                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                      />
-                      <div className={`w-full p-8 rounded-3xl border-2 border-dashed flex flex-col items-center justify-center gap-3 transition-all ${paymentScreenshotUrl ? 'border-green-500 bg-green-50' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'}`}>
-                        {paymentScreenshotUrl ? (
-                          <>
-                            <CheckCircle2 className="w-10 h-10 text-green-500" />
-                            <p className="font-bold text-green-700">Screenshot Attached</p>
-                            <p className="text-xs text-green-600">Click to change</p>
-                          </>
-                        ) : (
-                          <>
-                            <UploadCloud className="w-10 h-10 text-slate-400" />
-                            <p className="font-bold text-slate-600">Tap to upload screenshot</p>
-                            <p className="text-xs text-slate-400">JPG, PNG up to 5MB</p>
-                          </>
-                        )}
-                      </div>
+                                const reader = new FileReader();
+                                reader.onloadend = () => {
+                                  const img = new Image();
+                                  img.onload = () => {
+                                    const canvas = document.createElement('canvas');
+                                    let width = img.width;
+                                    let height = img.height;
+                                    const MAX_WIDTH = 800;
+                                    
+                                    if (width > MAX_WIDTH) {
+                                      height = Math.round((height * MAX_WIDTH) / width);
+                                      width = MAX_WIDTH;
+                                    }
+                                    
+                                    canvas.width = width;
+                                    canvas.height = height;
+                                    const ctx = canvas.getContext('2d');
+                                    ctx?.drawImage(img, 0, 0, width, height);
+                                    
+                                    const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6);
+                                    setPaymentScreenshotUrls(prev => {
+                                      const newUrls = [...prev];
+                                      newUrls[index] = compressedBase64;
+                                      return newUrls;
+                                    });
+                                  };
+                                  img.src = reader.result as string;
+                                };
+                                reader.readAsDataURL(file);
+                              }
+                            }}
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                          />
+                          <div className={`w-full h-full rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-2 transition-all overflow-hidden ${paymentScreenshotUrls[index] ? 'border-green-500 bg-green-50' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'}`}>
+                            {paymentScreenshotUrls[index] ? (
+                              <img src={paymentScreenshotUrls[index]} alt="Payment" className="w-full h-full object-cover" />
+                            ) : (
+                              <>
+                                <UploadCloud className="w-6 h-6 text-slate-400" />
+                                <p className="text-[10px] font-bold text-slate-600 text-center px-2">Tap to upload</p>
+                              </>
+                            )}
+                          </div>
+                          {paymentScreenshotUrls[index] && (
+                            <button 
+                              onClick={() => setPaymentScreenshotUrls(prev => prev.filter((_, i) => i !== index))}
+                              className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full z-20 shadow-lg"
+                            >
+                              <Minus className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
                     </div>
                   </motion.div>
 
@@ -1161,8 +1199,8 @@ export default function FranchisePortal() {
                     variants={itemVariants}
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
-                    onClick={() => handlePayment(paymentScreenshotUrl)}
-                    disabled={isProcessingPayment || !paymentScreenshotUrl}
+                    onClick={() => handlePayment(paymentScreenshotUrls.filter(Boolean))}
+                    disabled={isProcessingPayment || paymentScreenshotUrls.filter(Boolean).length === 0}
                     className="w-full bg-teal-600 text-white py-4 rounded-2xl font-bold text-lg hover:bg-teal-700 disabled:opacity-50 transition-all shadow-xl shadow-teal-200 flex items-center justify-center gap-2"
                   >
                     {isProcessingPayment ? "Processing..." : "Submit Payment"}
@@ -1283,6 +1321,79 @@ export default function FranchisePortal() {
             </div>
           )}
         </AnimatePresence>
+        )}
+        {selectedOrderDetails && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-[2.5rem] w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col"
+            >
+              <div className="bg-slate-900 p-8 text-white flex justify-between items-center shrink-0">
+                <div>
+                  <h3 className="text-2xl font-black">Order Details</h3>
+                  <p className="text-teal-400 font-bold uppercase text-xs tracking-widest mt-1">#{selectedOrderDetails.id.slice(-8)}</p>
+                </div>
+                <button onClick={() => setSelectedOrderDetails(null)} className="p-2 hover:bg-white/10 rounded-xl transition-colors">
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+              
+              <div className="p-8 overflow-y-auto flex-1 space-y-8">
+                <div>
+                  <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-4">Items in Order</h4>
+                  <div className="space-y-3">
+                    {selectedOrderDetails.items.map((item, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                        <div>
+                          <p className="font-bold text-slate-900">{item.name}</p>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Rs. {item.price.toLocaleString()} x {item.quantity}</p>
+                        </div>
+                        <p className="font-black text-slate-900">Rs. {(item.price * item.quantity).toLocaleString()}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-slate-900 rounded-3xl p-6 text-white space-y-4">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-400 font-bold uppercase tracking-widest">Subtotal</span>
+                    <span className="font-bold">Rs. {selectedOrderDetails.totalAmount.toLocaleString()}</span>
+                  </div>
+                  {selectedOrderDetails.discount > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-400 font-bold uppercase tracking-widest">Discount ({selectedOrderDetails.discountPercent}%)</span>
+                      <span className="font-bold text-green-400">- Rs. {selectedOrderDetails.discount.toLocaleString()}</span>
+                    </div>
+                  )}
+                  {selectedOrderDetails.balanceAdjustment > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-400 font-bold uppercase tracking-widest">Balance Used</span>
+                      <span className="font-bold text-teal-400">- Rs. {selectedOrderDetails.balanceAdjustment.toLocaleString()}</span>
+                    </div>
+                  )}
+                  <div className="pt-4 border-t border-white/10 flex justify-between items-end">
+                    <span className="font-black uppercase tracking-widest text-sm">Final Amount</span>
+                    <span className="text-3xl font-black text-teal-400">Rs. {selectedOrderDetails.finalAmount.toLocaleString()}</span>
+                  </div>
+                </div>
+
+                {selectedOrderDetails.paymentScreenshots && selectedOrderDetails.paymentScreenshots.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-4">Payment Proof</h4>
+                    <div className="grid grid-cols-2 gap-4">
+                      {selectedOrderDetails.paymentScreenshots.map((url, idx) => (
+                        <a key={idx} href={url} target="_blank" rel="noreferrer" className="block rounded-2xl overflow-hidden border border-slate-200 hover:border-teal-500 transition-all">
+                          <img src={url} alt={`Payment Proof ${idx + 1}`} className="w-full h-32 object-cover" />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </div>
         )}
       </main>
     </div>
