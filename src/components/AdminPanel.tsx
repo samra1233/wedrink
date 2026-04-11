@@ -9,7 +9,7 @@ import { Store, BarChart3, Search, Package, DollarSign, Clock, LogOut, Box, Plus
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
-import { regions } from "../data";
+import { regions, products } from "../data";
 
 interface Order {
   id: string;
@@ -21,7 +21,7 @@ interface Order {
   discountPercent?: number;
   balanceAdjustment?: number;
   finalAmount: number;
-  paymentScreenshot?: string;
+  paymentScreenshots?: string[];
   date: string;
   items: { id: string; name: string; quantity: number; price: number; category: 'Raw Material' | 'Equipment' | 'Uniform' }[];
 }
@@ -169,8 +169,8 @@ interface FranchiseUser {
   regionName: string;
   franchiseId: string;
   franchiseName: string;
-  //balance?: number;
-  //discountPercent?: number;
+  balance?: number;
+  discountPercent?: number;
 }
 
 export default function AdminPanel() {
@@ -193,6 +193,68 @@ export default function AdminPanel() {
   const [isAddingUser, setIsAddingUser] = useState(false);
   const [newUser, setNewUser] = useState<Partial<FranchiseUser>>({ email: '', password: '', regionId: '', franchiseId: '', balance: 0, discountPercent: 0 });
   const [editingUser, setEditingUser] = useState<FranchiseUser | null>(null);
+  const [editingOrder, setEditingOrder] = useState<Order | null>(null);
+
+  const handleUpdateOrder = async () => {
+    if (!editingOrder) return;
+    
+    const totalAmount = editingOrder.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const discount = (totalAmount * (editingOrder.discountPercent || 0)) / 100;
+    const finalAmount = totalAmount - discount - (editingOrder.balanceAdjustment || 0);
+    
+    try {
+      await updateDoc(doc(db, "orders", editingOrder.id), {
+        items: editingOrder.items,
+        discountPercent: editingOrder.discountPercent,
+        balanceAdjustment: editingOrder.balanceAdjustment,
+        totalAmount,
+        discount,
+        finalAmount
+      });
+      setEditingOrder(null);
+      setSelectedOrder(null);
+    } catch (error) {
+      console.error("Error updating order:", error);
+    }
+  };
+
+  const addItemToEditingOrder = (product: any) => {
+    if (!editingOrder) return;
+    const existingItem = editingOrder.items.find(i => i.id === product.id);
+    if (existingItem) {
+      setEditingOrder({
+        ...editingOrder,
+        items: editingOrder.items.map(i => i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i)
+      });
+    } else {
+      setEditingOrder({
+        ...editingOrder,
+        items: [...editingOrder.items, { ...product, quantity: 1 }]
+      });
+    }
+  };
+
+  const removeItemFromEditingOrder = (itemId: string) => {
+    if (!editingOrder) return;
+    setEditingOrder({
+      ...editingOrder,
+      items: editingOrder.items.filter(i => i.id !== itemId)
+    });
+  };
+
+  const updateItemQuantityInEditingOrder = (itemId: string, delta: number) => {
+    if (!editingOrder) return;
+    setEditingOrder({
+      ...editingOrder,
+      items: editingOrder.items.map(i => {
+        if (i.id === itemId) {
+          const newQty = Math.max(1, i.quantity + delta);
+          return { ...i, quantity: newQty };
+        }
+        return i;
+      })
+    });
+  };
   const [ledgerDateFilter, setLedgerDateFilter] = useState("");
   const [ledgerMonthFilter, setLedgerMonthFilter] = useState("");
 
@@ -466,7 +528,8 @@ export default function AdminPanel() {
   }, [orders, search, orderFilter]);
 
   const stats = useMemo(() => {
-    const totalRevenue = orders.reduce((sum, o) => sum + o.finalAmount, 0);
+    const verifiedOrders = orders.filter(o => o.status !== 'Cancelled' && o.status !== 'Pending');
+    const totalRevenue = verifiedOrders.reduce((sum, o) => sum + o.finalAmount, 0);
     const pendingOrders = orders.filter(o => o.status === 'Pending').length;
     return { totalRevenue, pendingOrders, totalOrders: orders.length };
   }, [orders]);
@@ -490,7 +553,7 @@ export default function AdminPanel() {
     }> = {};
     
     orders.forEach(order => {
-      if (order.status === 'Cancelled') return;
+      if (order.status === 'Cancelled' || order.status === 'Pending') return;
       
       const orderDate = new Date(order.date);
       const orderMonth = orderDate.toISOString().slice(0, 7); // YYYY-MM
@@ -574,7 +637,7 @@ export default function AdminPanel() {
     }> = {};
     
     orders.forEach(order => {
-      if (order.status === 'Cancelled') return;
+      if (order.status === 'Cancelled' || order.status === 'Pending') return;
 
       const orderDate = new Date(order.date);
       const orderMonth = orderDate.toISOString().slice(0, 7); // YYYY-MM
@@ -957,7 +1020,7 @@ export default function AdminPanel() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {orders.slice().sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((order) => (
+                    {orders.filter(o => o.status !== 'Cancelled' && o.status !== 'Pending').slice().sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((order) => (
                       <tr key={order.id} className="hover:bg-slate-50/50 transition-colors cursor-pointer" onClick={() => setSelectedOrder(order)}>
                         <td className="px-8 py-6">
                           <p className="font-bold text-slate-900">{new Date(order.date).toLocaleDateString()}</p>
@@ -1746,6 +1809,155 @@ export default function AdminPanel() {
           </div>
         )}
 
+        {editingOrder && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-[2.5rem] w-full max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col"
+            >
+              <div className="bg-slate-900 p-8 text-white flex justify-between items-center shrink-0">
+                <div>
+                  <h3 className="text-2xl font-black">Edit Order</h3>
+                  <p className="text-teal-400 font-bold uppercase text-xs tracking-widest mt-1">{editingOrder.franchiseName} - #{editingOrder.id.slice(-8)}</p>
+                </div>
+                <button onClick={() => setEditingOrder(null)} className="p-2 hover:bg-white/10 rounded-xl transition-colors">
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+              
+              <div className="p-8 overflow-y-auto flex-1 grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="space-y-6">
+                  <div>
+                    <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-4 flex items-center gap-2">
+                      <ClipboardList className="w-4 h-4 text-teal-600" />
+                      Order Items
+                    </h4>
+                    <div className="space-y-3">
+                      {editingOrder.items.map((item) => (
+                        <div key={item.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                          <div className="flex-1">
+                            <p className="font-bold text-slate-900">{item.name}</p>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Rs. {item.price.toLocaleString()}</p>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-2 bg-white rounded-xl border border-slate-200 p-1">
+                              <button 
+                                onClick={() => updateItemQuantityInEditingOrder(item.id, -1)}
+                                className="p-1 hover:bg-slate-50 rounded-lg text-slate-400 hover:text-teal-600 transition-colors"
+                              >
+                                <Minus className="w-4 h-4" />
+                              </button>
+                              <span className="w-8 text-center font-bold text-slate-900">{item.quantity}</span>
+                              <button 
+                                onClick={() => updateItemQuantityInEditingOrder(item.id, 1)}
+                                className="p-1 hover:bg-slate-50 rounded-lg text-slate-400 hover:text-teal-600 transition-colors"
+                              >
+                                <Plus className="w-4 h-4" />
+                              </button>
+                            </div>
+                            <button 
+                              onClick={() => removeItemFromEditingOrder(item.id)}
+                              className="p-2 text-red-400 hover:text-red-600 transition-colors"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      {editingOrder.items.length === 0 && (
+                        <div className="text-center py-8 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                          <p className="text-slate-400 font-bold text-sm">No items in order</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="pt-6 border-t border-slate-100">
+                    <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-4">Add More Items</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                      {products.map(product => (
+                        <button
+                          key={product.id}
+                          onClick={() => addItemToEditingOrder(product)}
+                          className="flex flex-col items-start p-3 bg-white border border-slate-200 rounded-xl hover:border-teal-500 hover:shadow-md transition-all text-left group"
+                        >
+                          <p className="font-bold text-slate-900 text-xs group-hover:text-teal-600 transition-colors">{product.name}</p>
+                          <p className="text-[10px] text-slate-400 font-bold">Rs. {product.price.toLocaleString()}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-6">
+                  <div className="bg-slate-900 rounded-3xl p-6 text-white space-y-6">
+                    <h4 className="text-sm font-black uppercase tracking-widest text-teal-400">Financial Adjustments</h4>
+                    
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Discount Percent (%)</label>
+                        <input 
+                          type="number"
+                          value={editingOrder.discountPercent || 0}
+                          onChange={(e) => setEditingOrder({...editingOrder, discountPercent: Number(e.target.value)})}
+                          className="w-full bg-white/10 border border-white/10 rounded-xl px-4 py-3 font-bold text-white focus:outline-none focus:ring-2 focus:ring-teal-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Balance Adjustment (Rs.)</label>
+                        <input 
+                          type="number"
+                          value={editingOrder.balanceAdjustment || 0}
+                          onChange={(e) => setEditingOrder({...editingOrder, balanceAdjustment: Number(e.target.value)})}
+                          className="w-full bg-white/10 border border-white/10 rounded-xl px-4 py-3 font-bold text-white focus:outline-none focus:ring-2 focus:ring-teal-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="pt-6 border-t border-white/10 space-y-3">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-400 font-bold uppercase tracking-widest">Subtotal</span>
+                        <span className="font-bold">Rs. {editingOrder.items.reduce((sum, i) => sum + (i.price * i.quantity), 0).toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-400 font-bold uppercase tracking-widest">Discount</span>
+                        <span className="font-bold text-green-400">- Rs. {((editingOrder.items.reduce((sum, i) => sum + (i.price * i.quantity), 0) * (editingOrder.discountPercent || 0)) / 100).toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-400 font-bold uppercase tracking-widest">Balance Used</span>
+                        <span className="font-bold text-teal-400">- Rs. {(editingOrder.balanceAdjustment || 0).toLocaleString()}</span>
+                      </div>
+                      <div className="pt-3 border-t border-white/10 flex justify-between items-end">
+                        <span className="font-black uppercase tracking-widest text-sm">Final Amount</span>
+                        <span className="text-3xl font-black text-teal-400">
+                          Rs. {(
+                            editingOrder.items.reduce((sum, i) => sum + (i.price * i.quantity), 0) - 
+                            (editingOrder.items.reduce((sum, i) => sum + (i.price * i.quantity), 0) * (editingOrder.discountPercent || 0) / 100) - 
+                            (editingOrder.balanceAdjustment || 0)
+                          ).toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button 
+                    onClick={handleUpdateOrder}
+                    className="w-full py-5 bg-teal-600 text-white rounded-[2rem] font-black text-xl hover:bg-teal-700 transition-all shadow-xl shadow-teal-900/20 flex items-center justify-center gap-3"
+                  >
+                    <Save className="w-6 h-6" />
+                    Save Order Changes
+                  </button>
+                  <p className="text-center text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                    Customer will see these changes in their portal
+                  </p>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
         {editingUser && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <motion.div 
@@ -2039,16 +2251,27 @@ export default function AdminPanel() {
                 </div>
               </div>
 
-              {selectedOrder.paymentScreenshot && (
+              {selectedOrder.paymentScreenshots && selectedOrder.paymentScreenshots.length > 0 && (
                 <div>
                   <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-4">Payment Proof</h4>
-                  <div className="rounded-[2.5rem] overflow-hidden border-4 border-slate-100 shadow-lg">
-                    <img src={selectedOrder.paymentScreenshot} alt="Payment Screenshot" className="w-full h-auto" />
+                  <div className="grid grid-cols-2 gap-4">
+                    {selectedOrder.paymentScreenshots.map((url, idx) => (
+                      <a key={idx} href={url} target="_blank" rel="noreferrer" className="block rounded-[2rem] overflow-hidden border-4 border-slate-100 shadow-lg hover:border-teal-500 transition-all">
+                        <img src={url} alt={`Payment Proof ${idx + 1}`} className="w-full h-40 object-cover" />
+                      </a>
+                    ))}
                   </div>
                 </div>
               )}
 
-              <div className="flex justify-end pt-6">
+              <div className="flex justify-between items-center pt-6">
+                <button 
+                  onClick={() => setEditingOrder(selectedOrder)}
+                  className="px-8 py-4 bg-teal-50 text-teal-600 rounded-2xl font-black hover:bg-teal-100 transition-all flex items-center gap-2"
+                >
+                  <Edit2 className="w-5 h-5" />
+                  Edit Order
+                </button>
                 <button 
                   onClick={() => {
                     setOrderToCancel(selectedOrder);
