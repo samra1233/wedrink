@@ -28,7 +28,7 @@ import {
   FileSpreadsheet,
   X
 } from "lucide-react";
-import { regions, products, Region, Franchise, Product } from "../data";
+import { regions, Region, Franchise, Product } from "../data";
 import { db, auth } from "../firebase";
 import { signOut } from "firebase/auth";
 import { collection, addDoc, query, where, onSnapshot, updateDoc, doc, getDoc, writeBatch } from "firebase/firestore";
@@ -44,6 +44,8 @@ interface InventoryItem {
   id: string;
   name: string;
   quantity: number;
+  price?: number;
+  unit?: string;
   type: 'raw' | 'equipment' | 'uniform';
 }
 
@@ -463,11 +465,19 @@ export default function FranchisePortal() {
   };
 
   const filteredProducts = useMemo(() => {
-    return products.filter(p => 
+    const mappedProducts: Product[] = inventory.map(item => ({
+      id: item.id,
+      name: item.name,
+      price: item.price || 0,
+      unit: item.unit || 'pcs',
+      category: (item.type === 'raw' ? 'Raw Material' : item.type === 'equipment' ? 'Equipment' : 'Uniform') as Product['category']
+    }));
+
+    return mappedProducts.filter(p => 
       p.category === activeCategory && 
       p.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
-  }, [activeCategory, searchQuery]);
+  }, [activeCategory, searchQuery, inventory]);
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -875,7 +885,9 @@ export default function FranchisePortal() {
                               <div className="flex justify-between items-start mb-4">
                                 <div className="space-y-1">
                                   <h4 className="font-bold text-slate-900">{product.name}</h4>
-                                  <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Per {product.unit}</p>
+                                  <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">
+                                    {product.category === 'Raw Material' ? 'Per Carton' : `Per ${product.unit}`}
+                                  </p>
                                 </div>
                                 <p className="font-black text-teal-600">Rs. {product.price}</p>
                               </div>
