@@ -1,0 +1,111 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: adminUsers
+// Document ID: {userId}
+// Fields:
+//   - email: string (required)
+//   - role: string (required, enum: ['super_admin', 'admin'])
+//   - permissions: map (required)
+//
+// Collection: orders
+// Document ID: {orderId}
+// Fields:
+//   - userId: string (required) - The UID of the user who placed the order
+//   - franchiseName: string (required)
+//   - status: string (required, enum: ['Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled'])
+//   - finalAmount: number (required)
+//   - items: list (required)
+//
+// Collection: inventory
+// Document ID: {itemId}
+// Fields:
+//   - name: string (required)
+//   - quantity: number (required)
+//   - type: string (required)
+//
+// ===============================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/adminUsers/$(request.auth.uid)).data.role in ['super_admin', 'admin'] ||
+         (request.auth.token.email == "samra20020413@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isValidOrder(data) {
+      return data.keys().hasAll(['userId', 'franchiseName', 'status', 'finalAmount', 'items']) &&
+             data.userId is string &&
+             data.franchiseName is string &&
+             data.status in ['Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled'] &&
+             data.finalAmount is number &&
+             data.items is list;
+    }
+
+    function isValidInventory(data) {
+      return data.keys().hasAll(['name', 'quantity', 'type']) &&
+             data.name is string &&
+             data.quantity is number &&
+             data.type is string;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    // Admin Users Collection
+    match /adminUsers/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // Franchise Users Collection
+    match /franchiseUsers/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // Orders Collection
+    match /orders/{orderId} {
+      // Users can read their own orders, Admins can read all
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      
+      // Users can create orders for themselves
+      allow create: if isAuthenticated() && 
+                    request.resource.data.userId == request.auth.uid && 
+                    isValidOrder(request.resource.data);
+      
+      // Admins can update any order, Users can only update their own if Pending
+      allow update: if isAdmin() || 
+                    (isOwner(resource.data.userId) && 
+                     resource.data.status == 'Pending' && 
+                     isValidOrder(request.resource.data));
+      
+      allow delete: if isAdmin();
+    }
+
+    // Inventory Collection
+    match /inventory/{itemId} {
+      // Everyone authenticated can read inventory (to place orders)
+      allow read: if isAuthenticated();
+      // Only admins can modify inventory
+      allow write: if isAdmin() && isValidInventory(request.resource.data);
+    }
+  }
+}
