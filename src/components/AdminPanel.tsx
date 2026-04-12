@@ -3,7 +3,7 @@ import { db, auth } from "../firebase";
 import { signOut, createUserWithEmailAndPassword } from "firebase/auth";
 import { initializeApp, getApp, getApps } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { collection, onSnapshot, query, orderBy, doc, updateDoc, getDoc, setDoc, addDoc, deleteDoc } from "firebase/firestore";
+import { collection, onSnapshot, query, orderBy, doc, updateDoc, getDoc, setDoc, addDoc, deleteDoc, writeBatch } from "firebase/firestore";
 import { motion, AnimatePresence } from "framer-motion";
 import { Store, BarChart3, Search, Package, DollarSign, Clock, LogOut, Box, Plus, Minus, RefreshCw, X, History, MapPin, LayoutDashboard, ClipboardList, Wrench, Shirt, ArrowRight, Edit2, Check, Save, Trash2, FileText, FileSpreadsheet, Users } from "lucide-react";
 import jsPDF from 'jspdf';
@@ -429,18 +429,27 @@ export default function AdminPanel() {
   };
 
   const updateStatus = async (orderId: string, status: Order['status'], items: Order['items']) => {
-    await updateDoc(doc(db, "orders", orderId), { status });
+    const batch = writeBatch(db);
+    const orderRef = doc(db, "orders", orderId);
+    batch.update(orderRef, { status });
     
     if (status === 'Cancelled') {
-      for (const item of items) {
-        const invDocRef = doc(db, "inventory", item.id);
-        const invDoc = await getDoc(invDocRef);
+      // Fetch all inventory docs in parallel
+      const inventorySnapshots = await Promise.all(
+        items.map(item => getDoc(doc(db, "inventory", item.id)))
+      );
+
+      inventorySnapshots.forEach((invDoc, index) => {
         if (invDoc.exists()) {
+          const item = items[index];
           const currentQty = invDoc.data().quantity;
-          await updateDoc(invDocRef, { quantity: currentQty + item.quantity });
+          const invDocRef = doc(db, "inventory", item.id);
+          batch.update(invDocRef, { quantity: currentQty + item.quantity });
         }
-      }
+      });
     }
+    
+    await batch.commit();
   };
 
   const adjustInventory = async (itemId: string, delta: number) => {
