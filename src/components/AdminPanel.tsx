@@ -9,7 +9,7 @@ import { Store, BarChart3, Search, Package, DollarSign, Clock, LogOut, Box, Plus
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
-import { regions, products } from "../data";
+import { regions } from "../data";
 
 interface Order {
   id: string;
@@ -30,135 +30,137 @@ interface InventoryItem {
   id: string;
   name: string;
   quantity: number;
+  price: number;
+  unit: string;
   type: 'raw' | 'equipment' | 'uniform';
 }
 
 const initialInventoryData: InventoryItem[] = [
   // Raw Materials
-  { id: 'RAW001', name: 'original ice cream powder', quantity: 1098, type: 'raw' },
-  { id: 'RAW002', name: 'matcha ice cream powder', quantity: 691, type: 'raw' },
-  { id: 'RAW003', name: 'ice cream cone', quantity: 1088, type: 'raw' },
-  { id: 'RAW004', name: 'milk tea powder', quantity: 548, type: 'raw' },
-  { id: 'RAW005', name: 'cappuccino powder', quantity: 55, type: 'raw' },
-  { id: 'RAW006', name: 'latte powder', quantity: 31, type: 'raw' },
-  { id: 'RAW007', name: 'pearl', quantity: 1053, type: 'raw' },
-  { id: 'RAW008', name: 'fruit honey', quantity: 594, type: 'raw' },
-  { id: 'RAW009', name: 'fructose', quantity: 853, type: 'raw' },
-  { id: 'RAW010', name: 'black sugar', quantity: 314, type: 'raw' },
-  { id: 'RAW011', name: 'orange juice', quantity: 59, type: 'raw' },
-  { id: 'RAW012', name: 'grape juice', quantity: 422, type: 'raw' },
-  { id: 'RAW013', name: 'passion fruit juice', quantity: 1504, type: 'raw' },
-  { id: 'RAW014', name: 'coconut', quantity: 1716, type: 'raw' },
-  { id: 'RAW015', name: 'rasberry juice', quantity: 337, type: 'raw' },
-  { id: 'RAW016', name: 'strawberry jam', quantity: 499, type: 'raw' },
-  { id: 'RAW017', name: 'chocolate jam', quantity: 402, type: 'raw' },
-  { id: 'RAW018', name: 'red grapefruit', quantity: 152, type: 'raw' },
-  { id: 'RAW019', name: 'redbean can', quantity: 821, type: 'raw' },
-  { id: 'RAW020', name: 'blueberry jam', quantity: 414, type: 'raw' },
-  { id: 'RAW021', name: 'pinkpeach jam', quantity: 935, type: 'raw' },
-  { id: 'RAW022', name: 'mongo smoothie powder', quantity: 259, type: 'raw' },
-  { id: 'RAW023', name: 'mango jam', quantity: 281, type: 'raw' },
-  { id: 'RAW024', name: 'jasmine tea', quantity: 141, type: 'raw' },
-  { id: 'RAW025', name: 'grape fruit can', quantity: 821, type: 'raw' },
-  { id: 'RAW026', name: 'black tea', quantity: 82, type: 'raw' },
-  { id: 'RAW027', name: 'sour plum powder', quantity: 57, type: 'raw' },
-  { id: 'RAW028', name: 'peach jelly', quantity: 673, type: 'raw' },
-  { id: 'RAW029', name: 'pudding', quantity: 145, type: 'raw' },
-  { id: 'RAW030', name: '500pp cup', quantity: 194, type: 'raw' },
-  { id: 'RAW031', name: '700pp cup', quantity: 667, type: 'raw' },
-  { id: 'RAW032', name: 'super bucket', quantity: 755, type: 'raw' },
-  { id: 'RAW033', name: 'Sundae U cup', quantity: 418, type: 'raw' },
-  { id: 'RAW034', name: 'Thick straw', quantity: 341, type: 'raw' },
-  { id: 'RAW035', name: 'thin straw', quantity: 54, type: 'raw' },
-  { id: 'RAW036', name: 'Spherical lid', quantity: 277, type: 'raw' },
-  { id: 'RAW037', name: 'sealing rolls', quantity: 134, type: 'raw' },
-  { id: 'RAW038', name: 'long spoon', quantity: 132, type: 'raw' },
-  { id: 'RAW039', name: 'special spoon', quantity: 362, type: 'raw' },
-  { id: 'RAW040', name: 'single cup bag', quantity: 0, type: 'raw' },
-  { id: 'RAW041', name: 'double cup bag', quantity: 0, type: 'raw' },
-  { id: 'RAW042', name: 'four cup bag', quantity: 0, type: 'raw' },
-  { id: 'RAW043', name: '16A paper cup', quantity: 76, type: 'raw' },
-  { id: 'RAW044', name: 'plasitc lid', quantity: 74, type: 'raw' },
+  { id: 'RAW001', name: 'original ice cream powder', quantity: 1098, type: 'raw', price: 46800, unit: 'carton' },
+  { id: 'RAW002', name: 'matcha ice cream powder', quantity: 691, type: 'raw', price: 53600, unit: 'carton' },
+  { id: 'RAW003', name: 'ice cream cone', quantity: 1088, type: 'raw', price: 8270, unit: 'carton' },
+  { id: 'RAW004', name: 'milk tea powder', quantity: 548, type: 'raw', price: 53000, unit: 'carton' },
+  { id: 'RAW005', name: 'cappuccino powder', quantity: 55, type: 'raw', price: 75200, unit: 'carton' },
+  { id: 'RAW006', name: 'latte powder', quantity: 31, type: 'raw', price: 75200, unit: 'carton' },
+  { id: 'RAW007', name: 'pearl', quantity: 1053, type: 'raw', price: 14000, unit: 'carton' },
+  { id: 'RAW008', name: 'fruit honey', quantity: 594, type: 'raw', price: 30800, unit: 'carton' },
+  { id: 'RAW009', name: 'fructose', quantity: 853, type: 'raw', price: 18000, unit: 'carton' },
+  { id: 'RAW010', name: 'black sugar', quantity: 314, type: 'raw', price: 26800, unit: 'carton' },
+  { id: 'RAW011', name: 'orange juice', quantity: 59, type: 'raw', price: 69200, unit: 'carton' },
+  { id: 'RAW012', name: 'grape juice', quantity: 422, type: 'raw', price: 29200, unit: 'carton' },
+  { id: 'RAW013', name: 'passion fruit juice', quantity: 1504, type: 'raw', price: 33600, unit: 'carton' },
+  { id: 'RAW014', name: 'coconut', quantity: 1716, type: 'raw', price: 15600, unit: 'carton' },
+  { id: 'RAW015', name: 'rasberry juice', quantity: 337, type: 'raw', price: 48400, unit: 'carton' },
+  { id: 'RAW016', name: 'strawberry jam', quantity: 499, type: 'raw', price: 16800, unit: 'carton' },
+  { id: 'RAW017', name: 'chocolate jam', quantity: 402, type: 'raw', price: 35000, unit: 'carton' },
+  { id: 'RAW018', name: 'red grapefruit', quantity: 152, type: 'raw', price: 30400, unit: 'carton' },
+  { id: 'RAW019', name: 'redbean can', quantity: 821, type: 'raw', price: 9600, unit: 'carton' },
+  { id: 'RAW020', name: 'blueberry jam', quantity: 414, type: 'raw', price: 23600, unit: 'carton' },
+  { id: 'RAW021', name: 'pinkpeach jam', quantity: 935, type: 'raw', price: 29600, unit: 'carton' },
+  { id: 'RAW022', name: 'mongo smoothie powder', quantity: 259, type: 'raw', price: 49200, unit: 'carton' },
+  { id: 'RAW023', name: 'mango jam', quantity: 281, type: 'raw', price: 32000, unit: 'carton' },
+  { id: 'RAW024', name: 'jasmine tea', quantity: 141, type: 'raw', price: 79200, unit: 'carton' },
+  { id: 'RAW025', name: 'grape fruit can', quantity: 821, type: 'raw', price: 18800, unit: 'carton' },
+  { id: 'RAW026', name: 'black tea', quantity: 82, type: 'raw', price: 72000, unit: 'carton' },
+  { id: 'RAW027', name: 'sour plum powder', quantity: 57, type: 'raw', price: 30000, unit: 'carton' },
+  { id: 'RAW028', name: 'peach jelly', quantity: 673, type: 'raw', price: 10000, unit: 'carton' },
+  { id: 'RAW029', name: 'pudding', quantity: 145, type: 'raw', price: 53600, unit: 'carton' },
+  { id: 'RAW030', name: '500pp cup', quantity: 194, type: 'raw', price: 21000, unit: 'carton' },
+  { id: 'RAW031', name: '700pp cup', quantity: 667, type: 'raw', price: 26000, unit: 'carton' },
+  { id: 'RAW032', name: 'super bucket', quantity: 755, type: 'raw', price: 22000, unit: 'carton' },
+  { id: 'RAW033', name: 'Sundae U cup', quantity: 418, type: 'raw', price: 21000, unit: 'carton' },
+  { id: 'RAW034', name: 'Thick straw', quantity: 341, type: 'raw', price: 20000, unit: 'carton' },
+  { id: 'RAW035', name: 'thin straw', quantity: 54, type: 'raw', price: 12000, unit: 'carton' },
+  { id: 'RAW036', name: 'Spherical lid', quantity: 277, type: 'raw', price: 16400, unit: 'carton' },
+  { id: 'RAW037', name: 'sealing rolls', quantity: 134, type: 'raw', price: 46400, unit: 'carton' },
+  { id: 'RAW038', name: 'long spoon', quantity: 132, type: 'raw', price: 26000, unit: 'carton' },
+  { id: 'RAW039', name: 'special spoon', quantity: 362, type: 'raw', price: 7200, unit: 'carton' },
+  { id: 'RAW040', name: 'single cup bag', quantity: 0, type: 'raw', price: 39600, unit: 'carton' },
+  { id: 'RAW041', name: 'double cup bag', quantity: 0, type: 'raw', price: 35600, unit: 'carton' },
+  { id: 'RAW042', name: 'four cup bag', quantity: 0, type: 'raw', price: 35600, unit: 'carton' },
+  { id: 'RAW043', name: '16A paper cup', quantity: 76, type: 'raw', price: 16400, unit: 'carton' },
+  { id: 'RAW044', name: 'plasitc lid', quantity: 74, type: 'raw', price: 15500, unit: 'carton' },
 
   // Equipment
-  { id: 'EQP001', name: 'Ice Cream Machine', quantity: 8, type: 'equipment' },
-  { id: 'EQP002', name: 'Ice Making Machine', quantity: 9, type: 'equipment' },
-  { id: 'EQP003', name: 'Sealing Machine', quantity: 52, type: 'equipment' },
-  { id: 'EQP004', name: 'Hot Water Machine', quantity: 29, type: 'equipment' },
-  { id: 'EQP005', name: 'Refrigerator', quantity: 7, type: 'equipment' },
-  { id: 'EQP006', name: 'Freezer', quantity: 14, type: 'equipment' },
-  { id: 'EQP007', name: 'Fructose machine', quantity: 52, type: 'equipment' },
-  { id: 'EQP008', name: 'RO-Water purifiers', quantity: 9, type: 'equipment' },
-  { id: 'EQP009', name: 'Pure water machine storage tank', quantity: 10, type: 'equipment' },
-  { id: 'EQP010', name: 'Ice Cream Model', quantity: 9, type: 'equipment' },
-  { id: 'EQP011', name: 'Pearl Cooker', quantity: 6, type: 'equipment' },
-  { id: 'EQP012', name: 'Slicer', quantity: 2, type: 'equipment' },
-  { id: 'EQP013', name: 'Blender', quantity: 21, type: 'equipment' },
-  { id: 'EQP014', name: 'Weight measurer 1g', quantity: 80, type: 'equipment' },
-  { id: 'EQP015', name: 'Weight measurer 0.1g', quantity: 219, type: 'equipment' },
-  { id: 'EQP016', name: 'Lemon stick', quantity: 17, type: 'equipment' },
-  { id: 'EQP017', name: 'Stainless steel bucket', quantity: 153, type: 'equipment' },
-  { id: 'EQP018', name: 'S.S steel bucket (small)', quantity: 151, type: 'equipment' },
-  { id: 'EQP019', name: 'Thermos', quantity: 399, type: 'equipment' },
-  { id: 'EQP020', name: 'Leaky net', quantity: 267, type: 'equipment' },
-  { id: 'EQP021', name: 'Egg stirrer', quantity: 221, type: 'equipment' },
-  { id: 'EQP022', name: 'Big Ice Shovel', quantity: 78, type: 'equipment' },
-  { id: 'EQP023', name: 'Measuring spoon', quantity: 1580, type: 'equipment' },
-  { id: 'EQP024', name: 'Can openner', quantity: 431, type: 'equipment' },
-  { id: 'EQP025', name: 'Bar spoons', quantity: 331, type: 'equipment' },
-  { id: 'EQP026', name: '5000ml measure cup', quantity: 360, type: 'equipment' },
-  { id: 'EQP027', name: '2000ml measure cup', quantity: 360, type: 'equipment' },
-  { id: 'EQP028', name: '300ml measure cup', quantity: 457, type: 'equipment' },
-  { id: 'EQP029', name: 'Leaky bag', quantity: 330, type: 'equipment' },
-  { id: 'EQP030', name: 'Chocolate Presser', quantity: 104, type: 'equipment' },
-  { id: 'EQP031', name: 'Sugar pressure flask', quantity: 144, type: 'equipment' },
-  { id: 'EQP032', name: 'Stainless steel spoon', quantity: 253, type: 'equipment' },
-  { id: 'EQP033', name: 'Stainless steel colander', quantity: 252, type: 'equipment' },
-  { id: 'EQP034', name: 'Cup holder', quantity: 128, type: 'equipment' },
-  { id: 'EQP035', name: 'Powder box', quantity: 451, type: 'equipment' },
-  { id: 'EQP036', name: 'Straw organizer', quantity: 127, type: 'equipment' },
-  { id: 'EQP037', name: 'Thermometer', quantity: 192, type: 'equipment' },
-  { id: 'EQP038', name: 'Timer', quantity: 367, type: 'equipment' },
-  { id: 'EQP039', name: 'Sealing clip', quantity: 132, type: 'equipment' },
-  { id: 'EQP040', name: 'Towels', quantity: 59, type: 'equipment' },
-  { id: 'EQP041', name: 'Shake Cup-700cc', quantity: 132, type: 'equipment' },
-  { id: 'EQP042', name: 'Curtain', quantity: 69, type: 'equipment' },
-  { id: 'EQP043', name: 'Pool 1500*620*800', quantity: 12, type: 'equipment' },
-  { id: 'EQP044', name: 'Shelving (large)', quantity: 72, type: 'equipment' },
-  { id: 'EQP045', name: '2m Light box', quantity: 9, type: 'equipment' },
-  { id: 'EQP046', name: '3m Light box', quantity: 26, type: 'equipment' },
-  { id: 'EQP047', name: 'Plastic doll', quantity: 5, type: 'equipment' },
-  { id: 'EQP048', name: 'A set of cash register', quantity: 74, type: 'equipment' },
-  { id: 'EQP049', name: '20 inches PP filter cartridge', quantity: 31, type: 'equipment' },
-  { id: 'EQP050', name: 'PP cotton integrated filter cartridge', quantity: 32, type: 'equipment' },
-  { id: 'EQP051', name: '20 inches UDF filter cartridge', quantity: 28, type: 'equipment' },
-  { id: 'EQP052', name: '20 inches resin filter cartridge', quantity: 29, type: 'equipment' },
-  { id: 'EQP053', name: 'RO membrane filter cartridge', quantity: 48, type: 'equipment' },
-  { id: 'EQP054', name: '4 meter Arches', quantity: 10, type: 'equipment' },
-  { id: 'EQP055', name: '6 meter Arches', quantity: 0, type: 'equipment' },
-  { id: 'EQP056', name: 'Doll', quantity: 10, type: 'equipment' },
-  { id: 'EQP057', name: 'Ice cream machine dasher rubber sleeve', quantity: 0, type: 'equipment' },
+  { id: 'EQP001', name: 'Ice Cream Machine', quantity: 8, type: 'equipment', price: 1472000, unit: 'pcs' },
+  { id: 'EQP002', name: 'Ice Making Machine', quantity: 9, type: 'equipment', price: 1024000, unit: 'pcs' },
+  { id: 'EQP003', name: 'Sealing Machine', quantity: 52, type: 'equipment', price: 220000, unit: 'pcs' },
+  { id: 'EQP004', name: 'Hot Water Machine', quantity: 29, type: 'equipment', price: 132000, unit: 'pcs' },
+  { id: 'EQP005', name: 'Refrigerator', quantity: 7, type: 'equipment', price: 624000, unit: 'pcs' },
+  { id: 'EQP006', name: 'Freezer', quantity: 14, type: 'equipment', price: 272000, unit: 'pcs' },
+  { id: 'EQP007', name: 'Fructose machine', quantity: 52, type: 'equipment', price: 152000, unit: 'pcs' },
+  { id: 'EQP008', name: 'RO-Water purifiers', quantity: 9, type: 'equipment', price: 220000, unit: 'pcs' },
+  { id: 'EQP009', name: 'Pure water machine storage tank', quantity: 10, type: 'equipment', price: 50000, unit: 'pcs' },
+  { id: 'EQP010', name: 'Ice Cream Model', quantity: 9, type: 'equipment', price: 54000, unit: 'pcs' },
+  { id: 'EQP011', name: 'Pearl Cooker', quantity: 6, type: 'equipment', price: 67200, unit: 'pcs' },
+  { id: 'EQP012', name: 'Slicer', quantity: 2, type: 'equipment', price: 7520, unit: 'pcs' },
+  { id: 'EQP013', name: 'Blender', quantity: 21, type: 'equipment', price: 83400, unit: 'pcs' },
+  { id: 'EQP014', name: 'Weight measurer 1g', quantity: 80, type: 'equipment', price: 17200, unit: 'pcs' },
+  { id: 'EQP015', name: 'Weight measurer 0.1g', quantity: 219, type: 'equipment', price: 2760, unit: 'pcs' },
+  { id: 'EQP016', name: 'Lemon stick', quantity: 17, type: 'equipment', price: 3920, unit: 'pcs' },
+  { id: 'EQP017', name: 'Stainless steel bucket', quantity: 153, type: 'equipment', price: 8000, unit: 'pcs' },
+  { id: 'EQP018', name: 'S.S steel bucket (small)', quantity: 151, type: 'equipment', price: 1720, unit: 'pcs' },
+  { id: 'EQP019', name: 'Thermos', quantity: 399, type: 'equipment', price: 11680, unit: 'pcs' },
+  { id: 'EQP020', name: 'Leaky net', quantity: 267, type: 'equipment', price: 2000, unit: 'pcs' },
+  { id: 'EQP021', name: 'Egg stirrer', quantity: 221, type: 'equipment', price: 1400, unit: 'pcs' },
+  { id: 'EQP022', name: 'Big Ice Shovel', quantity: 78, type: 'equipment', price: 1520, unit: 'pcs' },
+  { id: 'EQP023', name: 'Measuring spoon', quantity: 1580, type: 'equipment', price: 40, unit: 'pcs' },
+  { id: 'EQP024', name: 'Can openner', quantity: 431, type: 'equipment', price: 1160, unit: 'pcs' },
+  { id: 'EQP025', name: 'Bar spoons', quantity: 331, type: 'equipment', price: 360, unit: 'pcs' },
+  { id: 'EQP026', name: '5000ml measure cup', quantity: 360, type: 'equipment', price: 1800, unit: 'pcs' },
+  { id: 'EQP027', name: '2000ml measure cup', quantity: 360, type: 'equipment', price: 1200, unit: 'pcs' },
+  { id: 'EQP028', name: '300ml measure cup', quantity: 457, type: 'equipment', price: 720, unit: 'pcs' },
+  { id: 'EQP029', name: 'Leaky bag', quantity: 330, type: 'equipment', price: 600, unit: 'pcs' },
+  { id: 'EQP030', name: 'Chocolate Presser', quantity: 104, type: 'equipment', price: 880, unit: 'pcs' },
+  { id: 'EQP031', name: 'Sugar pressure flask', quantity: 144, type: 'equipment', price: 1600, unit: 'pcs' },
+  { id: 'EQP032', name: 'Stainless steel spoon', quantity: 253, type: 'equipment', price: 1450, unit: 'pcs' },
+  { id: 'EQP033', name: 'Stainless steel colander', quantity: 252, type: 'equipment', price: 680, unit: 'pcs' },
+  { id: 'EQP034', name: 'Cup holder', quantity: 128, type: 'equipment', price: 8400, unit: 'pcs' },
+  { id: 'EQP035', name: 'Powder box', quantity: 451, type: 'equipment', price: 800, unit: 'pcs' },
+  { id: 'EQP036', name: 'Straw organizer', quantity: 127, type: 'equipment', price: 8400, unit: 'pcs' },
+  { id: 'EQP037', name: 'Thermometer', quantity: 192, type: 'equipment', price: 1680, unit: 'pcs' },
+  { id: 'EQP038', name: 'Timer', quantity: 367, type: 'equipment', price: 880, unit: 'pcs' },
+  { id: 'EQP039', name: 'Sealing clip', quantity: 132, type: 'equipment', price: 640, unit: 'pcs' },
+  { id: 'EQP040', name: 'Towels', quantity: 59, type: 'equipment', price: 1200, unit: 'pcs' },
+  { id: 'EQP041', name: 'Shake Cup-700cc', quantity: 132, type: 'equipment', price: 1000, unit: 'pcs' },
+  { id: 'EQP042', name: 'Curtain', quantity: 69, type: 'equipment', price: 2400, unit: 'pcs' },
+  { id: 'EQP043', name: 'Pool 1500*620*800', quantity: 12, type: 'equipment', price: 103600, unit: 'pcs' },
+  { id: 'EQP044', name: 'Shelving (large)', quantity: 72, type: 'equipment', price: 73000, unit: 'pcs' },
+  { id: 'EQP045', name: '2m Light box', quantity: 9, type: 'equipment', price: 146000, unit: 'pcs' },
+  { id: 'EQP046', name: '3m Light box', quantity: 26, type: 'equipment', price: 220000, unit: 'pcs' },
+  { id: 'EQP047', name: 'Plastic doll', quantity: 5, type: 'equipment', price: 200000, unit: 'pcs' },
+  { id: 'EQP048', name: 'A set of cash register', quantity: 74, type: 'equipment', price: 260000, unit: 'pcs' },
+  { id: 'EQP049', name: '20 inches PP filter cartridge', quantity: 31, type: 'equipment', price: 800, unit: 'pcs' },
+  { id: 'EQP050', name: 'PP cotton integrated filter cartridge', quantity: 32, type: 'equipment', price: 960, unit: 'pcs' },
+  { id: 'EQP051', name: '20 inches UDF filter cartridge', quantity: 28, type: 'equipment', price: 2000, unit: 'pcs' },
+  { id: 'EQP052', name: '20 inches resin filter cartridge', quantity: 29, type: 'equipment', price: 3000, unit: 'pcs' },
+  { id: 'EQP053', name: 'RO membrane filter cartridge', quantity: 48, type: 'equipment', price: 19200, unit: 'pcs' },
+  { id: 'EQP054', name: '4 meter Arches', quantity: 10, type: 'equipment', price: 15000, unit: 'pcs' },
+  { id: 'EQP055', name: '6 meter Arches', quantity: 0, type: 'equipment', price: 20000, unit: 'pcs' },
+  { id: 'EQP056', name: 'Doll', quantity: 10, type: 'equipment', price: 5000, unit: 'pcs' },
+  { id: 'EQP057', name: 'Ice cream machine dasher rubber sleeve', quantity: 0, type: 'equipment', price: 500, unit: 'pcs' },
 
   // Uniform
-  { id: 'UNI001', name: 'clothes (S)', quantity: 45, type: 'uniform' },
-  { id: 'UNI002', name: 'clothes (M)', quantity: 1, type: 'uniform' },
-  { id: 'UNI003', name: 'clothes (L)', quantity: 14, type: 'uniform' },
-  { id: 'UNI004', name: 'clothes (XL)', quantity: 97, type: 'uniform' },
-  { id: 'UNI005', name: 'clothes (XXL)', quantity: 0, type: 'uniform' },
-  { id: 'UNI006', name: 'apron', quantity: 166, type: 'uniform' },
-  { id: 'UNI007', name: 'hat', quantity: 98, type: 'uniform' },
-  { id: 'UNI008', name: 'sleeve', quantity: 161, type: 'uniform' },
-  { id: 'UNI009', name: 'Jacket (M)', quantity: 59, type: 'uniform' },
-  { id: 'UNI010', name: 'Jacket (L)', quantity: 197, type: 'uniform' },
-  { id: 'UNI011', name: 'Jacket (XL)', quantity: 14, type: 'uniform' },
-  { id: 'UNI012', name: 'Blue Shirts S', quantity: 11, type: 'uniform' },
-  { id: 'UNI013', name: 'Blue Shirts M', quantity: 20, type: 'uniform' },
-  { id: 'UNI014', name: 'Blue Shirts L', quantity: 24, type: 'uniform' },
-  { id: 'UNI015', name: 'Blue Shirts XL', quantity: 14, type: 'uniform' },
-  { id: 'UNI016', name: 'Blue Shirts XXL', quantity: 10, type: 'uniform' },
-  { id: 'UNI017', name: 'office Jackets M', quantity: 0, type: 'uniform' },
-  { id: 'UNI018', name: 'office Jackets L', quantity: 0, type: 'uniform' },
-  { id: 'UNI019', name: 'office Jackets XL', quantity: 0, type: 'uniform' },
+  { id: 'UNI001', name: 'clothes (S)', quantity: 45, type: 'uniform', price: 1720, unit: 'pcs' },
+  { id: 'UNI002', name: 'clothes (M)', quantity: 1, type: 'uniform', price: 1720, unit: 'pcs' },
+  { id: 'UNI003', name: 'clothes (L)', quantity: 14, type: 'uniform', price: 1720, unit: 'pcs' },
+  { id: 'UNI004', name: 'clothes (XL)', quantity: 97, type: 'uniform', price: 1720, unit: 'pcs' },
+  { id: 'UNI005', name: 'clothes (XXL)', quantity: 0, type: 'uniform', price: 1720, unit: 'pcs' },
+  { id: 'UNI006', name: 'apron', quantity: 166, type: 'uniform', price: 1790, unit: 'pcs' },
+  { id: 'UNI007', name: 'hat', quantity: 98, type: 'uniform', price: 860, unit: 'pcs' },
+  { id: 'UNI008', name: 'sleeve', quantity: 161, type: 'uniform', price: 430, unit: 'pair' },
+  { id: 'UNI009', name: 'Jacket (M)', quantity: 59, type: 'uniform', price: 3600, unit: 'pcs' },
+  { id: 'UNI010', name: 'Jacket (L)', quantity: 197, type: 'uniform', price: 3600, unit: 'pcs' },
+  { id: 'UNI011', name: 'Jacket (XL)', quantity: 14, type: 'uniform', price: 3600, unit: 'pcs' },
+  { id: 'UNI012', name: 'Blue Shirts S', quantity: 11, type: 'uniform', price: 2300, unit: 'pcs' },
+  { id: 'UNI013', name: 'Blue Shirts M', quantity: 20, type: 'uniform', price: 2300, unit: 'pcs' },
+  { id: 'UNI014', name: 'Blue Shirts L', quantity: 24, type: 'uniform', price: 2300, unit: 'pcs' },
+  { id: 'UNI015', name: 'Blue Shirts XL', quantity: 14, type: 'uniform', price: 2300, unit: 'pcs' },
+  { id: 'UNI016', name: 'Blue Shirts XXL', quantity: 10, type: 'uniform', price: 2300, unit: 'pcs' },
+  { id: 'UNI017', name: 'office Jackets M', quantity: 0, type: 'uniform', price: 4000, unit: 'pcs' },
+  { id: 'UNI018', name: 'office Jackets L', quantity: 0, type: 'uniform', price: 4000, unit: 'pcs' },
+  { id: 'UNI019', name: 'office Jackets XL', quantity: 0, type: 'uniform', price: 4000, unit: 'pcs' },
 ];
 
 interface FranchiseUser {
@@ -233,6 +235,9 @@ export default function AdminPanel() {
     }
   });
   const [editingAdmin, setEditingAdmin] = useState<AdminUser | null>(null);
+  const [itemToDelete, setItemToDelete] = useState<InventoryItem | null>(null);
+  const [adminToDelete, setAdminToDelete] = useState<AdminUser | null>(null);
+  const [userToDelete, setUserToDelete] = useState<FranchiseUser | null>(null);
 
   const handleUpdateOrder = async () => {
     if (!editingOrder) return;
@@ -446,12 +451,11 @@ export default function AdminPanel() {
   };
 
   const handleDeleteAdmin = async (adminId: string) => {
-    if (window.confirm("Are you sure you want to delete this admin?")) {
-      try {
-        await deleteDoc(doc(db, "adminUsers", adminId));
-      } catch (error) {
-        console.error("Error deleting admin:", error);
-      }
+    try {
+      await deleteDoc(doc(db, "adminUsers", adminId));
+      setAdminToDelete(null);
+    } catch (error) {
+      console.error("Error deleting admin:", error);
     }
   };
 
@@ -515,12 +519,21 @@ export default function AdminPanel() {
     setEditingItem(null);
   };
 
+  const deleteInventoryItem = async (itemId: string) => {
+    try {
+      await deleteDoc(doc(db, "inventory", itemId));
+      setItemToDelete(null);
+    } catch (error) {
+      console.error("Error deleting inventory item:", error);
+    }
+  };
+
   const addNewInventoryItem = async () => {
-    if (!newItem.name || !newItem.type) return;
+    if (!newItem.name || !newItem.type || newItem.price === undefined || !newItem.unit) return;
     const id = `${newItem.type?.toUpperCase().slice(0, 3)}${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
     await setDoc(doc(db, "inventory", id), { ...newItem, id });
     setIsAddingItem(false);
-    setNewItem({ name: '', quantity: 0, type: 'raw' });
+    setNewItem({ name: '', quantity: 0, type: 'raw', price: 0, unit: '' });
   };
 
   const addUser = async () => {
@@ -573,6 +586,7 @@ export default function AdminPanel() {
   const deleteUser = async (userId: string) => {
     try {
       await deleteDoc(doc(db, "franchiseUsers", userId));
+      setUserToDelete(null);
     } catch (error) {
       console.error("Error deleting user: ", error);
     }
@@ -1778,12 +1792,20 @@ export default function AdminPanel() {
                                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{item.type}</p>
                               </div>
                             </div>
-                            <button 
-                              onClick={() => setEditingItem(item)}
-                              className="p-2 md:p-3 bg-slate-50 rounded-xl text-slate-300 hover:text-teal-600 hover:bg-teal-50 transition-all"
-                            >
-                              <Edit2 className="w-4 h-4" />
-                            </button>
+                            <div className="flex gap-2">
+                              <button 
+                                onClick={() => setEditingItem(item)}
+                                className="p-2 md:p-3 bg-slate-50 rounded-xl text-slate-300 hover:text-teal-600 hover:bg-teal-50 transition-all"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                              <button 
+                                onClick={() => setItemToDelete(item)}
+                                className="p-2 md:p-3 bg-slate-50 rounded-xl text-slate-300 hover:text-red-600 hover:bg-red-50 transition-all"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
                           </div>
 
                           <div className="bg-slate-50 rounded-2xl md:rounded-3xl p-4 md:p-6 flex items-center justify-between border border-slate-100 group-hover:border-teal-100 transition-colors">
@@ -2238,7 +2260,7 @@ export default function AdminPanel() {
                             <Edit2 className="w-5 h-5" />
                           </button>
                           <button 
-                            onClick={() => deleteUser(user.id)}
+                            onClick={() => setUserToDelete(user)}
                             className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-colors"
                           >
                             <Trash2 className="w-5 h-5" />
@@ -2316,7 +2338,7 @@ export default function AdminPanel() {
                       Edit Permissions
                     </button>
                     <button 
-                      onClick={() => handleDeleteAdmin(admin.id)}
+                      onClick={() => setAdminToDelete(admin)}
                       className="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all shadow-sm"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -2619,14 +2641,20 @@ export default function AdminPanel() {
                   <div className="pt-6 border-t border-slate-100">
                     <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-4">Add More Items</h4>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                      {products.map(product => (
+                      {inventory.map(item => (
                         <button
-                          key={product.id}
-                          onClick={() => addItemToEditingOrder(product)}
+                          key={item.id}
+                          onClick={() => addItemToEditingOrder({
+                            id: item.id,
+                            name: item.name,
+                            price: item.price,
+                            unit: item.unit,
+                            category: (item.type === 'raw' ? 'Raw Material' : item.type === 'equipment' ? 'Equipment' : 'Uniform')
+                          })}
                           className="flex flex-col items-start p-3 bg-white border border-slate-200 rounded-xl hover:border-teal-500 hover:shadow-md transition-all text-left group"
                         >
-                          <p className="font-bold text-slate-900 text-xs group-hover:text-teal-600 transition-colors">{product.name}</p>
-                          <p className="text-[10px] text-slate-400 font-bold">Rs. {product.price.toLocaleString()}</p>
+                          <p className="font-bold text-slate-900 text-xs group-hover:text-teal-600 transition-colors">{item.name}</p>
+                          <p className="text-[10px] text-slate-400 font-bold">Rs. {item.price.toLocaleString()}</p>
                         </button>
                       ))}
                     </div>
@@ -2788,6 +2816,27 @@ export default function AdminPanel() {
                     <option value="uniform">Uniform</option>
                   </select>
                 </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Price (Rs.)</label>
+                    <input 
+                      type="number" 
+                      value={editingItem.price}
+                      onChange={(e) => setEditingItem({ ...editingItem, price: parseInt(e.target.value) })}
+                      className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-6 py-4 font-bold text-slate-900 focus:outline-none focus:border-teal-500 transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Unit</label>
+                    <input 
+                      type="text" 
+                      value={editingItem.unit}
+                      onChange={(e) => setEditingItem({ ...editingItem, unit: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-6 py-4 font-bold text-slate-900 focus:outline-none focus:border-teal-500 transition-all"
+                      placeholder="e.g. carton"
+                    />
+                  </div>
+                </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Quantity</label>
                   <input 
@@ -2851,6 +2900,27 @@ export default function AdminPanel() {
                     <option value="equipment">Equipment</option>
                     <option value="uniform">Uniform</option>
                   </select>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Price (Rs.)</label>
+                    <input 
+                      type="number" 
+                      value={newItem.price}
+                      onChange={(e) => setNewItem({ ...newItem, price: parseInt(e.target.value) })}
+                      className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-6 py-4 font-bold text-slate-900 focus:outline-none focus:border-teal-500 transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Unit</label>
+                    <input 
+                      type="text" 
+                      value={newItem.unit}
+                      onChange={(e) => setNewItem({ ...newItem, unit: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-6 py-4 font-bold text-slate-900 focus:outline-none focus:border-teal-500 transition-all"
+                      placeholder="e.g. carton"
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Initial Quantity</label>
@@ -3063,6 +3133,105 @@ export default function AdminPanel() {
                   className="flex-1 px-8 py-4 bg-red-600 text-white rounded-2xl font-black hover:bg-red-700 transition-all shadow-xl shadow-red-200"
                 >
                   Yes, Cancel
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Delete Inventory Item Modal */}
+        {itemToDelete && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-[3rem] max-w-md w-full p-10 shadow-2xl text-center"
+            >
+              <div className="w-20 h-20 bg-red-50 text-red-600 rounded-[2rem] flex items-center justify-center mx-auto mb-8 shadow-lg shadow-red-100">
+                <Trash2 className="w-10 h-10" />
+              </div>
+              <h2 className="text-3xl font-black text-slate-900 mb-4">Delete Item?</h2>
+              <p className="text-slate-500 font-medium mb-10 leading-relaxed">Are you sure you want to delete <span className="text-slate-900 font-bold">"{itemToDelete.name}"</span>? This action cannot be undone.</p>
+              
+              <div className="flex gap-4">
+                <button 
+                  onClick={() => setItemToDelete(null)} 
+                  className="flex-1 px-8 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black hover:bg-slate-200 transition-all"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={() => deleteInventoryItem(itemToDelete.id)}
+                  className="flex-1 px-8 py-4 bg-red-600 text-white rounded-2xl font-black hover:bg-red-700 transition-all shadow-xl shadow-red-200"
+                >
+                  Delete
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Delete User Modal */}
+        {userToDelete && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-[3rem] max-w-md w-full p-10 shadow-2xl text-center"
+            >
+              <div className="w-20 h-20 bg-red-50 text-red-600 rounded-[2rem] flex items-center justify-center mx-auto mb-8 shadow-lg shadow-red-100">
+                <Trash2 className="w-10 h-10" />
+              </div>
+              <h2 className="text-3xl font-black text-slate-900 mb-4">Delete User?</h2>
+              <p className="text-slate-500 font-medium mb-10 leading-relaxed">Are you sure you want to delete <span className="text-slate-900 font-bold">"{userToDelete.email}"</span>? This action cannot be undone.</p>
+              
+              <div className="flex gap-4">
+                <button 
+                  onClick={() => setUserToDelete(null)} 
+                  className="flex-1 px-8 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black hover:bg-slate-200 transition-all"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={() => deleteUser(userToDelete.id)}
+                  className="flex-1 px-8 py-4 bg-red-600 text-white rounded-2xl font-black hover:bg-red-700 transition-all shadow-xl shadow-red-200"
+                >
+                  Delete
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Delete Admin Modal */}
+        {adminToDelete && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-[3rem] max-w-md w-full p-10 shadow-2xl text-center"
+            >
+              <div className="w-20 h-20 bg-red-50 text-red-600 rounded-[2rem] flex items-center justify-center mx-auto mb-8 shadow-lg shadow-red-100">
+                <Trash2 className="w-10 h-10" />
+              </div>
+              <h2 className="text-3xl font-black text-slate-900 mb-4">Delete Admin?</h2>
+              <p className="text-slate-500 font-medium mb-10 leading-relaxed">Are you sure you want to delete <span className="text-slate-900 font-bold">"{adminToDelete.email}"</span>? This action cannot be undone.</p>
+              
+              <div className="flex gap-4">
+                <button 
+                  onClick={() => setAdminToDelete(null)} 
+                  className="flex-1 px-8 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black hover:bg-slate-200 transition-all"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={() => handleDeleteAdmin(adminToDelete.id)}
+                  className="flex-1 px-8 py-4 bg-red-600 text-white rounded-2xl font-black hover:bg-red-700 transition-all shadow-xl shadow-red-200"
+                >
+                  Delete
                 </button>
               </div>
             </motion.div>
