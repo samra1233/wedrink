@@ -1,7 +1,7 @@
 import { useState } from "react";
 import React from "react";
 import { auth } from "../firebase";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import { signInWithEmailAndPassword, setPersistence, browserSessionPersistence } from "firebase/auth";
 import { Lock, Mail, ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -16,6 +16,8 @@ export default function Login() {
     setLoading(true);
     setError("");
     try {
+      // Set persistence to session (clears when tab/browser is closed)
+      await setPersistence(auth, browserSessionPersistence);
       await signInWithEmailAndPassword(auth, email, password);
     } catch (err: any) {
       setError("Invalid email or password. Please check your credentials.");
