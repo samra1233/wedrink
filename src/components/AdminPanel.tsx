@@ -5,7 +5,7 @@ import { initializeApp, getApp, getApps } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { collection, onSnapshot, query, orderBy, doc, updateDoc, getDoc, setDoc, addDoc, deleteDoc, writeBatch } from "firebase/firestore";
 import { motion, AnimatePresence } from "framer-motion";
-import { Store, BarChart3, Search, Package, DollarSign, Clock, LogOut, Box, Plus, Minus, RefreshCw, X, History, MapPin, LayoutDashboard, ClipboardList, Wrench, Shirt, ArrowRight, Edit2, Check, Save, Trash2, FileText, FileSpreadsheet, Users } from "lucide-react";
+import { Store, BarChart3, Search, Package, DollarSign, Clock, LogOut, Box, Plus, Minus, RefreshCw, X, History, MapPin, LayoutDashboard, ClipboardList, Wrench, Shirt, ArrowRight, Edit2, Check, Save, Trash2, FileText, FileSpreadsheet, Users, Menu } from "lucide-react";
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -216,6 +216,7 @@ export default function AdminPanel() {
   const [editingUser, setEditingUser] = useState<FranchiseUser | null>(null);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [isAddingAdmin, setIsAddingAdmin] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [newAdmin, setNewAdmin] = useState<Partial<AdminUser>>({
     email: '',
     password: '',
@@ -236,12 +237,51 @@ export default function AdminPanel() {
   const handleUpdateOrder = async () => {
     if (!editingOrder) return;
     
+    const originalOrder = orders.find(o => o.id === editingOrder.id);
+    if (!originalOrder) return;
+
     const totalAmount = editingOrder.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     const discount = (totalAmount * (editingOrder.discountPercent || 0)) / 100;
     const finalAmount = totalAmount - discount - (editingOrder.balanceAdjustment || 0);
     
     try {
-      await updateDoc(doc(db, "orders", editingOrder.id), {
+      const batch = writeBatch(db);
+      
+      // Adjust inventory based on item changes
+      if (originalOrder.status !== 'Cancelled') {
+        const itemDiffs: { [id: string]: number } = {};
+        
+        // Original items (negative diff means we "return" them conceptually)
+        originalOrder.items.forEach(item => {
+          itemDiffs[item.id] = (itemDiffs[item.id] || 0) - item.quantity;
+        });
+        
+        // New items (positive diff means we deduct them)
+        editingOrder.items.forEach(item => {
+          itemDiffs[item.id] = (itemDiffs[item.id] || 0) + item.quantity;
+        });
+
+        const changedItemIds = Object.keys(itemDiffs).filter(id => itemDiffs[id] !== 0);
+        
+        if (changedItemIds.length > 0) {
+          const inventorySnaps = await Promise.all(
+            changedItemIds.map(id => getDoc(doc(db, "inventory", id)))
+          );
+          
+          inventorySnaps.forEach((snap, index) => {
+            if (snap.exists()) {
+              const id = changedItemIds[index];
+              const diff = itemDiffs[id];
+              const currentInvQty = snap.data().quantity;
+              batch.update(doc(db, "inventory", id), {
+                quantity: currentInvQty - diff
+              });
+            }
+          });
+        }
+      }
+
+      batch.update(doc(db, "orders", editingOrder.id), {
         items: editingOrder.items,
         discountPercent: editingOrder.discountPercent,
         balanceAdjustment: editingOrder.balanceAdjustment,
@@ -249,6 +289,8 @@ export default function AdminPanel() {
         discount,
         finalAmount
       });
+
+      await batch.commit();
       setEditingOrder(null);
       setSelectedOrder(null);
     } catch (error) {
@@ -1113,11 +1155,30 @@ export default function AdminPanel() {
   }
 
   return (
-    <div className="flex bg-slate-50 min-h-screen selection:bg-teal-100 selection:text-teal-900 font-sans">
+    <div className="flex flex-col lg:flex-row bg-slate-50 min-h-screen selection:bg-teal-100 selection:text-teal-900 font-sans overflow-hidden">
+      {/* Mobile Header */}
+      <div className="lg:hidden bg-white border-b border-slate-200 p-4 flex items-center justify-between sticky top-0 z-50">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm border border-teal-50">
+            <img src="/Logo.png" alt="WEDRINK" className="w-8 h-8 object-contain" />
+          </div>
+          <h1 className="text-lg font-black text-slate-900 tracking-tight">WEDRINK</h1>
+        </div>
+        <button 
+          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          className="p-2 hover:bg-slate-50 rounded-xl transition-all text-slate-600"
+        >
+          {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+        </button>
+      </div>
+
       {/* Sidebar Navigation */}
-      <aside className="w-72 bg-white border-r border-slate-200 flex flex-col sticky top-0 h-screen z-40 shadow-sm">
+      <aside className={`
+        fixed inset-y-0 left-0 z-50 w-72 bg-white border-r border-slate-200 flex flex-col transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:h-screen
+        ${isMobileMenuOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}
+      `}>
         <div className="p-8">
-          <div className="flex items-center gap-4 mb-10">
+          <div className="hidden lg:flex items-center gap-4 mb-10">
             <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm border border-teal-50 shrink-0">
               <img src="/Logo.png" alt="WEDRINK" className="w-10 h-10 object-contain" />
             </div>
@@ -1143,6 +1204,7 @@ export default function AdminPanel() {
                 onClick={() => {
                   setActiveTab(tab.id as any);
                   setSelectedFranchiseForDetail(null);
+                  setIsMobileMenuOpen(false);
                 }} 
                 className={`w-full px-4 py-3.5 rounded-2xl font-bold flex items-center gap-3 transition-all group ${
                   activeTab === tab.id 
@@ -1184,14 +1246,22 @@ export default function AdminPanel() {
         </div>
       </aside>
 
+      {/* Mobile Overlay */}
+      {isMobileMenuOpen && (
+        <div 
+          className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40 lg:hidden"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
       {/* Main Content Area */}
-      <main className="flex-1 p-10 overflow-y-auto max-h-screen bg-gradient-to-br from-slate-50 via-white to-teal-50/30">
-        <header className="flex justify-between items-center mb-10">
+      <main className="flex-1 p-4 md:p-10 overflow-y-auto max-h-screen bg-gradient-to-br from-slate-50 via-white to-teal-50/30">
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8 md:mb-10">
           <div>
-            <h2 className="text-3xl font-black text-slate-900 tracking-tight capitalize">
+            <h2 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight capitalize">
               {activeTab === 'orders' ? 'Live Orders' : activeTab.replace(/([A-Z])/g, ' $1')}
             </h2>
-            <p className="text-slate-500 font-medium mt-1">
+            <p className="text-slate-500 font-medium mt-1 text-sm md:text-base">
               {activeTab === 'orders' && 'Real-time order management and tracking'}
               {activeTab === 'history' && 'Complete historical record of all transactions'}
               {activeTab === 'franchise' && 'Detailed financial ledger for each franchise'}
@@ -1203,25 +1273,25 @@ export default function AdminPanel() {
           {activeTab === 'orders' && (
             <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-2xl border border-slate-100 shadow-sm">
               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-              <span className="text-xs font-bold text-slate-600 uppercase tracking-widest">System Online</span>
+              <span className="text-[10px] md:text-xs font-bold text-slate-600 uppercase tracking-widest">System Online</span>
             </div>
           )}
 
           {activeTab === 'history' && (
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <button 
                 onClick={exportOrderHistoryToPDF}
-                className="px-6 py-3 bg-white text-slate-600 rounded-2xl border border-slate-100 hover:bg-slate-50 transition-all shadow-sm flex items-center gap-2 font-bold text-xs"
+                className="px-4 md:px-6 py-2.5 md:py-3 bg-white text-slate-600 rounded-2xl border border-slate-100 hover:bg-slate-50 transition-all shadow-sm flex items-center gap-2 font-bold text-[10px] md:text-xs"
               >
                 <FileText className="w-4 h-4 text-teal-600" />
-                Export PDF
+                PDF
               </button>
               <button 
                 onClick={exportOrderHistoryToExcel}
-                className="px-6 py-3 bg-white text-slate-600 rounded-2xl border border-slate-100 hover:bg-slate-50 transition-all shadow-sm flex items-center gap-2 font-bold text-xs"
+                className="px-4 md:px-6 py-2.5 md:py-3 bg-white text-slate-600 rounded-2xl border border-slate-100 hover:bg-slate-50 transition-all shadow-sm flex items-center gap-2 font-bold text-[10px] md:text-xs"
               >
                 <FileSpreadsheet className="w-4 h-4 text-green-600" />
-                Export Excel
+                Excel
               </button>
             </div>
           )}
@@ -1249,18 +1319,18 @@ export default function AdminPanel() {
                       if (stat.id === 'pending') setOrderFilter('pending');
                       if (stat.id === 'revenue') setActiveTab('revenue');
                     }}
-                    className={`bg-white p-8 rounded-[2.5rem] shadow-sm border flex items-center gap-6 group hover:shadow-xl hover:shadow-${stat.color}-900/5 transition-all cursor-pointer ${
+                    className={`bg-white p-6 md:p-8 rounded-2xl md:rounded-[2.5rem] shadow-sm border flex items-center gap-4 md:gap-6 group hover:shadow-xl hover:shadow-${stat.color}-900/5 transition-all cursor-pointer ${
                       (stat.id === 'total' && orderFilter === 'all') || (stat.id === 'pending' && orderFilter === 'pending') 
                         ? `border-${stat.color}-400 ring-4 ring-${stat.color}-50` 
                         : 'border-slate-100 hover:border-slate-200'
                     }`}
                   >
-                    <div className={`w-16 h-16 bg-${stat.color}-50 text-${stat.color}-600 rounded-3xl flex items-center justify-center transition-transform group-hover:scale-110`}>
-                      <stat.icon className="w-8 h-8" />
+                    <div className={`w-12 h-12 md:w-16 md:h-16 bg-${stat.color}-50 text-${stat.color}-600 rounded-2xl md:rounded-3xl flex items-center justify-center transition-transform group-hover:scale-110`}>
+                      <stat.icon className="w-6 h-6 md:w-8 md:h-8" />
                     </div>
                     <div>
-                      <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">{stat.label}</p>
-                      <p className="text-3xl font-black text-slate-900">{stat.value}</p>
+                      <p className="text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">{stat.label}</p>
+                      <p className="text-xl md:text-3xl font-black text-slate-900">{stat.value}</p>
                     </div>
                   </div>
                 ))}
@@ -1279,23 +1349,23 @@ export default function AdminPanel() {
 
               <div className="grid gap-6">
                 {filteredOrders.map(order => (
-                  <div key={order.id} className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 hover:border-teal-200 hover:shadow-xl hover:shadow-teal-900/5 transition-all group">
-                    <div className="flex items-center gap-6">
-                      <div className="w-16 h-16 bg-white rounded-3xl flex items-center justify-center border border-slate-100 group-hover:border-teal-100 transition-all shadow-sm overflow-hidden">
-                        <img src="/Logo.png" alt="WEDRINK" className="w-12 h-12 object-contain" />
+                  <div key={order.id} className="bg-white p-6 md:p-8 rounded-2xl md:rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 hover:border-teal-200 hover:shadow-xl hover:shadow-teal-900/5 transition-all group">
+                    <div className="flex items-center gap-4 md:gap-6">
+                      <div className="w-12 h-12 md:w-16 md:h-16 bg-white rounded-2xl md:rounded-3xl flex items-center justify-center border border-slate-100 group-hover:border-teal-100 transition-all shadow-sm overflow-hidden">
+                        <img src="/Logo.png" alt="WEDRINK" className="w-8 h-8 md:w-12 md:h-12 object-contain" />
                       </div>
                       <div>
-                        <h3 className="font-black text-xl text-slate-900 group-hover:text-teal-600 transition-colors">{order.franchiseName}</h3>
-                        <p className="text-sm text-slate-500 font-medium flex items-center gap-2 mt-1">
+                        <h3 className="font-black text-lg md:text-xl text-slate-900 group-hover:text-teal-600 transition-colors">{order.franchiseName}</h3>
+                        <p className="text-xs md:text-sm text-slate-500 font-medium flex items-center gap-2 mt-1">
                           <MapPin className="w-3 h-3" /> {order.regionName} 
-                          <span className="text-slate-300">•</span> 
+                          <span className="text-slate-300 hidden sm:inline">•</span> 
                           <Clock className="w-3 h-3" /> {new Date(order.date).toLocaleDateString()}
                         </p>
                       </div>
                     </div>
                     
-                    <div className="flex flex-wrap items-center gap-6 w-full md:w-auto">
-                      <div className="flex flex-col items-end">
+                    <div className="flex flex-wrap items-center justify-between md:justify-end gap-4 md:gap-6 w-full md:w-auto">
+                      <div className="flex flex-col items-start md:items-end">
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Status</p>
                         <select 
                           value={order.status}
@@ -1306,7 +1376,7 @@ export default function AdminPanel() {
                               updateStatus(order.id, e.target.value as Order['status'], order.items);
                             }
                           }}
-                          className={`appearance-none px-4 py-2 rounded-xl font-bold text-sm focus:outline-none transition-all cursor-pointer border-2 ${
+                          className={`appearance-none px-3 md:px-4 py-1.5 md:py-2 rounded-lg md:rounded-xl font-bold text-xs md:text-sm focus:outline-none transition-all cursor-pointer border-2 ${
                             order.status === 'Pending' ? 'bg-yellow-50 text-yellow-700 border-yellow-100 hover:border-yellow-200' :
                             order.status === 'Processing' ? 'bg-teal-50 text-teal-700 border-teal-100 hover:border-teal-200' :
                             order.status === 'Shipped' ? 'bg-purple-50 text-purple-700 border-purple-100 hover:border-purple-200' :
@@ -1322,16 +1392,16 @@ export default function AdminPanel() {
                         </select>
                       </div>
 
-                      <div className="flex flex-col items-end">
+                      <div className="flex flex-col items-start md:items-end">
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Amount</p>
-                        <p className="font-black text-2xl text-slate-900">Rs. {order.finalAmount.toLocaleString()}</p>
+                        <p className="font-black text-xl md:text-2xl text-slate-900">Rs. {order.finalAmount.toLocaleString()}</p>
                       </div>
 
                       <button 
                         onClick={() => setSelectedOrder(order)} 
-                        className="ml-auto md:ml-0 p-4 bg-teal-600 text-white rounded-2xl font-bold hover:bg-teal-700 transition-all shadow-lg shadow-teal-100 flex items-center gap-2"
+                        className="p-3 md:p-4 bg-teal-600 text-white rounded-xl md:rounded-2xl font-bold hover:bg-teal-700 transition-all shadow-lg shadow-teal-100 flex items-center gap-2"
                       >
-                        <ArrowRight className="w-5 h-5" />
+                        <ArrowRight className="w-4 h-4 md:w-5 md:h-5" />
                       </button>
                     </div>
                   </div>
@@ -1420,20 +1490,20 @@ export default function AdminPanel() {
             exit={{ opacity: 0, y: -20 }}
             className="space-y-10"
           >
-            <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-              <div className="flex items-center gap-6">
-                <div className="w-16 h-16 bg-green-50 rounded-3xl flex items-center justify-center text-green-600">
-                  <DollarSign className="w-8 h-8" />
+            <div className="bg-white p-6 md:p-8 rounded-2xl md:rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+              <div className="flex items-center gap-4 md:gap-6">
+                <div className="w-12 h-12 md:w-16 md:h-16 bg-green-50 rounded-2xl md:rounded-3xl flex items-center justify-center text-green-600">
+                  <DollarSign className="w-6 h-6 md:w-8 md:h-8" />
                 </div>
                 <div>
-                  <h2 className="text-3xl font-black text-slate-900 tracking-tight">Total Revenue Ledger</h2>
-                  <p className="text-sm text-slate-500 font-medium mt-1">Detailed breakdown of all transactions</p>
+                  <h2 className="text-xl md:text-3xl font-black text-slate-900 tracking-tight">Revenue Ledger</h2>
+                  <p className="text-xs md:text-sm text-slate-500 font-medium mt-1">Detailed breakdown of all transactions</p>
                 </div>
               </div>
-              <div className="text-right flex flex-col items-end gap-3">
+              <div className="text-left md:text-right flex flex-col items-start md:items-end gap-3 w-full md:w-auto">
                 <div>
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Cumulative Revenue</p>
-                  <p className="text-4xl font-black text-green-600">Rs. {stats.totalRevenue.toLocaleString()}</p>
+                  <p className="text-2xl md:text-4xl font-black text-green-600">Rs. {stats.totalRevenue.toLocaleString()}</p>
                 </div>
                 <div className="flex gap-2">
                   <button 
@@ -1526,8 +1596,8 @@ export default function AdminPanel() {
             {activeTab !== 'inventory' && (
               <div className="space-y-8">
                 {/* Ledger Filters */}
-                <div className="bg-white/80 backdrop-blur-md p-6 rounded-[2rem] border border-teal-100 shadow-xl shadow-teal-900/5 flex flex-wrap items-center gap-6 sticky top-0 z-30">
-                  <div className="flex-1 min-w-[200px] relative">
+                <div className="bg-white/80 backdrop-blur-md p-4 md:p-6 rounded-2xl md:rounded-[2rem] border border-teal-100 shadow-xl shadow-teal-900/5 flex flex-col lg:flex-row items-stretch lg:items-center gap-4 md:gap-6 sticky top-0 z-30">
+                  <div className="flex-1 min-w-0 relative">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-teal-600/40 w-4 h-4" />
                     <input 
                       type="text" 
@@ -1538,12 +1608,12 @@ export default function AdminPanel() {
                     />
                   </div>
                   {activeTab === 'franchise' && (
-                    <div className="flex gap-2 bg-slate-50 p-1.5 rounded-2xl border border-slate-100 shadow-sm">
+                    <div className="flex overflow-x-auto gap-2 bg-slate-50 p-1.5 rounded-2xl border border-slate-100 shadow-sm no-scrollbar">
                       {(['all', 'Raw Material', 'Equipment', 'Uniform'] as const).map(cat => (
                         <button 
                           key={cat} 
                           onClick={() => setFranchiseCategoryFilter(cat)}
-                          className={`px-4 py-2 rounded-xl font-bold capitalize transition-all text-xs ${
+                          className={`px-4 py-2 rounded-xl font-bold capitalize transition-all text-[10px] md:text-xs whitespace-nowrap ${
                             franchiseCategoryFilter === cat ? 'bg-teal-600 text-white shadow-md shadow-teal-100' : 'text-slate-500 hover:bg-slate-100'
                           }`}
                         >
@@ -1552,9 +1622,9 @@ export default function AdminPanel() {
                       ))}
                     </div>
                   )}
-                  <div className="flex items-center gap-4">
-                    <div className="flex flex-col">
-                      <label className="text-[10px] font-black text-teal-600/60 uppercase tracking-widest mb-1 ml-1">Month Filter</label>
+                  <div className="flex flex-wrap items-end gap-3 md:gap-4">
+                    <div className="flex-1 flex flex-col min-w-[120px]">
+                      <label className="text-[10px] font-black text-teal-600/60 uppercase tracking-widest mb-1 ml-1">Month</label>
                       <input 
                         type="month" 
                         value={ledgerMonthFilter}
@@ -1562,11 +1632,11 @@ export default function AdminPanel() {
                           setLedgerMonthFilter(e.target.value);
                           setLedgerDateFilter(""); // Clear date filter if month is picked
                         }}
-                        className="px-4 py-2.5 bg-teal-50/50 rounded-xl border border-teal-100 text-sm font-black text-teal-700 focus:ring-4 focus:ring-teal-500/10 focus:border-teal-500 outline-none transition-all"
+                        className="w-full px-4 py-2.5 bg-teal-50/50 rounded-xl border border-teal-100 text-xs md:text-sm font-black text-teal-700 focus:ring-4 focus:ring-teal-500/10 focus:border-teal-500 outline-none transition-all"
                       />
                     </div>
-                    <div className="flex flex-col">
-                      <label className="text-[10px] font-black text-teal-600/60 uppercase tracking-widest mb-1 ml-1">Date Filter</label>
+                    <div className="flex-1 flex flex-col min-w-[120px]">
+                      <label className="text-[10px] font-black text-teal-600/60 uppercase tracking-widest mb-1 ml-1">Date</label>
                       <input 
                         type="date" 
                         value={ledgerDateFilter}
@@ -1574,7 +1644,7 @@ export default function AdminPanel() {
                           setLedgerDateFilter(e.target.value);
                           setLedgerMonthFilter(""); // Clear month filter if date is picked
                         }}
-                        className="px-4 py-2.5 bg-teal-50/50 rounded-xl border border-teal-100 text-sm font-black text-teal-700 focus:ring-4 focus:ring-teal-500/10 focus:border-teal-500 outline-none transition-all"
+                        className="w-full px-4 py-2.5 bg-teal-50/50 rounded-xl border border-teal-100 text-xs md:text-sm font-black text-teal-700 focus:ring-4 focus:ring-teal-500/10 focus:border-teal-500 outline-none transition-all"
                       />
                     </div>
                     {(ledgerDateFilter || ledgerMonthFilter) && (
@@ -1583,20 +1653,18 @@ export default function AdminPanel() {
                           setLedgerDateFilter("");
                           setLedgerMonthFilter("");
                         }}
-                        className="mt-5 p-2.5 bg-red-50 text-red-500 hover:bg-red-100 rounded-xl transition-all shadow-sm flex items-center gap-2 font-bold text-xs"
+                        className="p-2.5 bg-red-50 text-red-500 hover:bg-red-100 rounded-xl transition-all shadow-sm flex items-center gap-2 font-bold text-xs"
                       >
                         <X className="w-4 h-4" />
-                        Clear
                       </button>
                     )}
-                    <div className="flex gap-2 mt-5">
+                    <div className="flex gap-2">
                       <button 
                         onClick={activeTab === 'franchise' ? exportFranchiseLedgerToPDF : exportRegionReportToPDF}
                         className="p-2.5 bg-white text-slate-600 rounded-xl border border-slate-100 hover:bg-slate-50 transition-all shadow-sm flex items-center gap-2 font-bold text-xs"
                         title="Export PDF"
                       >
                         <FileText className="w-4 h-4 text-teal-600" />
-                        PDF
                       </button>
                       <button 
                         onClick={activeTab === 'franchise' ? exportFranchiseLedgerToExcel : exportRegionReportToExcel}
@@ -1604,18 +1672,17 @@ export default function AdminPanel() {
                         title="Export Excel"
                       >
                         <FileSpreadsheet className="w-4 h-4 text-green-600" />
-                        Excel
                       </button>
                     </div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-                  <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex items-center gap-6 group hover:shadow-xl hover:shadow-teal-900/5 transition-all">
-                    <div className="w-14 h-14 bg-teal-50 text-teal-600 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110"><DollarSign className="w-7 h-7" /></div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-8">
+                  <div className="bg-white p-6 md:p-8 rounded-2xl md:rounded-[2.5rem] shadow-sm border border-slate-100 flex items-center gap-4 md:gap-6 group hover:shadow-xl hover:shadow-teal-900/5 transition-all">
+                    <div className="w-12 h-12 md:w-14 md:h-14 bg-teal-50 text-teal-600 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110"><DollarSign className="w-6 h-6 md:w-7 md:h-7" /></div>
                     <div>
                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total Sales</p>
-                      <p className="text-2xl font-black text-slate-900">Rs. {(activeTab === 'franchise' ? franchiseReport : regionReport).reduce((sum, item) => sum + item.total, 0).toLocaleString()}</p>
+                      <p className="text-xl md:text-2xl font-black text-slate-900">Rs. {(activeTab === 'franchise' ? franchiseReport : regionReport).reduce((sum, item) => sum + item.total, 0).toLocaleString()}</p>
                     </div>
                   </div>
                   <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex items-center gap-6 group hover:shadow-xl hover:shadow-teal-900/5 transition-all">
@@ -1691,35 +1758,35 @@ export default function AdminPanel() {
                     {inventory
                       .filter(item => inventoryCategory === 'all' || item.type === inventoryCategory)
                       .map(item => (
-                      <div key={item.id} className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 hover:border-teal-200 hover:shadow-2xl hover:shadow-teal-900/5 transition-all group relative overflow-hidden">
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-slate-50 rounded-full -mr-16 -mt-16 group-hover:bg-teal-50 transition-colors" />
+                      <div key={item.id} className="bg-white p-6 md:p-8 rounded-2xl md:rounded-[2.5rem] shadow-sm border border-slate-100 hover:border-teal-200 hover:shadow-2xl hover:shadow-teal-900/5 transition-all group relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-24 h-24 md:w-32 md:h-32 bg-slate-50 rounded-full -mr-12 -mt-12 md:-mr-16 md:-mt-16 group-hover:bg-teal-50 transition-colors" />
                         
                         <div className="relative z-10">
-                          <div className="flex justify-between items-start mb-8">
-                            <div className="flex items-center gap-5">
-                              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all group-hover:scale-110 ${
+                          <div className="flex justify-between items-start mb-6 md:mb-8">
+                            <div className="flex items-center gap-4 md:gap-5">
+                              <div className={`w-12 h-12 md:w-14 md:h-14 rounded-xl md:rounded-2xl flex items-center justify-center transition-all group-hover:scale-110 ${
                                 item.type === 'raw' ? 'bg-teal-50 text-teal-600' : 
                                 item.type === 'equipment' ? 'bg-purple-50 text-purple-600' : 
                                 'bg-orange-50 text-orange-600'
                               }`}>
-                                {item.type === 'raw' ? <Package className="w-7 h-7" /> : 
-                                 item.type === 'equipment' ? <Wrench className="w-7 h-7" /> : 
-                                 <Shirt className="w-7 h-7" />}
+                                {item.type === 'raw' ? <Package className="w-6 h-6 md:w-7 md:h-7" /> : 
+                                 item.type === 'equipment' ? <Wrench className="w-6 h-6 md:w-7 md:h-7" /> : 
+                                 <Shirt className="w-6 h-6 md:w-7 md:h-7" />}
                               </div>
                               <div>
-                                <h3 className="font-black text-lg text-slate-900 leading-tight group-hover:text-teal-600 transition-colors">{item.name}</h3>
+                                <h3 className="font-black text-base md:text-lg text-slate-900 leading-tight group-hover:text-teal-600 transition-colors">{item.name}</h3>
                                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{item.type}</p>
                               </div>
                             </div>
                             <button 
                               onClick={() => setEditingItem(item)}
-                              className="p-3 bg-slate-50 rounded-xl text-slate-300 hover:text-teal-600 hover:bg-teal-50 transition-all"
+                              className="p-2 md:p-3 bg-slate-50 rounded-xl text-slate-300 hover:text-teal-600 hover:bg-teal-50 transition-all"
                             >
                               <Edit2 className="w-4 h-4" />
                             </button>
                           </div>
 
-                          <div className="bg-slate-50 rounded-3xl p-6 flex items-center justify-between border border-slate-100 group-hover:border-teal-100 transition-colors">
+                          <div className="bg-slate-50 rounded-2xl md:rounded-3xl p-4 md:p-6 flex items-center justify-between border border-slate-100 group-hover:border-teal-100 transition-colors">
                             <div>
                               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Current Stock</p>
                               <div className="flex items-baseline gap-2">
@@ -1727,25 +1794,25 @@ export default function AdminPanel() {
                                   type="number" 
                                   value={item.quantity}
                                   onChange={(e) => setInventoryQuantity(item.id, parseInt(e.target.value))}
-                                  className={`w-24 bg-transparent text-3xl font-black focus:outline-none focus:text-teal-600 transition-colors ${
+                                  className={`w-16 md:w-24 bg-transparent text-2xl md:text-3xl font-black focus:outline-none focus:text-teal-600 transition-colors ${
                                     item.quantity < 10 ? 'text-red-600' : 'text-slate-900'
                                   }`}
                                 />
-                                <span className="text-xs font-bold text-slate-400 uppercase">Units</span>
+                                <span className="text-[10px] md:text-xs font-bold text-slate-400 uppercase">Units</span>
                               </div>
                             </div>
                             <div className="flex flex-col gap-2">
                               <button 
                                 onClick={() => adjustInventory(item.id, 1)}
-                                className="p-2.5 bg-white text-slate-400 hover:text-teal-600 hover:shadow-md rounded-xl transition-all border border-slate-100"
+                                className="p-2 md:p-2.5 bg-white text-slate-400 hover:text-teal-600 hover:shadow-md rounded-lg md:rounded-xl transition-all border border-slate-100"
                               >
-                                <Plus className="w-4 h-4" />
+                                <Plus className="w-3 h-3 md:w-4 md:h-4" />
                               </button>
                               <button 
                                 onClick={() => adjustInventory(item.id, -1)}
-                                className="p-2.5 bg-white text-slate-400 hover:text-red-600 hover:shadow-md rounded-xl transition-all border border-slate-100"
+                                className="p-2 md:p-2.5 bg-white text-slate-400 hover:text-red-600 hover:shadow-md rounded-lg md:rounded-xl transition-all border border-slate-100"
                               >
-                                <Minus className="w-4 h-4" />
+                                <Minus className="w-3 h-3 md:w-4 md:h-4" />
                               </button>
                             </div>
                           </div>
@@ -1767,21 +1834,21 @@ export default function AdminPanel() {
                 selectedFranchiseForDetail ? (
                   <div className="space-y-10">
                     {/* Franchise Detail View */}
-                    <div className="flex items-center justify-between bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
-                      <div className="flex items-center gap-6">
-                        <div className="w-16 h-16 bg-white rounded-3xl flex items-center justify-center border border-teal-50 shadow-sm overflow-hidden">
-                          <img src="/Logo.png" alt="WEDRINK" className="w-12 h-12 object-contain" />
+                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between bg-white p-6 md:p-8 rounded-2xl md:rounded-[2.5rem] border border-slate-100 shadow-sm gap-6">
+                      <div className="flex items-center gap-4 md:gap-6">
+                        <div className="w-12 h-12 md:w-16 md:h-16 bg-white rounded-2xl md:rounded-3xl flex items-center justify-center border border-teal-50 shadow-sm overflow-hidden">
+                          <img src="/Logo.png" alt="WEDRINK" className="w-8 h-8 md:w-12 md:h-12 object-contain" />
                         </div>
                         <div>
-                          <h2 className="text-3xl font-black text-slate-900 tracking-tight">{selectedFranchiseForDetail}</h2>
-                          <p className="text-sm text-slate-500 font-medium mt-1">Comprehensive Purchase Ledger</p>
+                          <h2 className="text-xl md:text-3xl font-black text-slate-900 tracking-tight">{selectedFranchiseForDetail}</h2>
+                          <p className="text-xs md:text-sm text-slate-500 font-medium mt-1">Comprehensive Purchase Ledger</p>
                         </div>
                       </div>
                       <button 
                         onClick={() => setSelectedFranchiseForDetail(null)}
-                        className="px-8 py-3.5 bg-slate-100 text-slate-600 rounded-2xl font-bold hover:bg-slate-200 transition-all flex items-center gap-3"
+                        className="w-full md:w-auto px-6 md:px-8 py-3 md:py-3.5 bg-slate-100 text-slate-600 rounded-xl md:rounded-2xl font-bold hover:bg-slate-200 transition-all flex items-center justify-center gap-3 text-sm"
                       >
-                        <ArrowRight className="w-5 h-5 rotate-180" />
+                        <ArrowRight className="w-4 h-4 md:w-5 md:h-5 rotate-180" />
                         Back to Network
                       </button>
                     </div>
@@ -1789,33 +1856,33 @@ export default function AdminPanel() {
                     {/* Monthly Records */}
                     <div className="grid gap-10">
                       {Object.entries(franchiseReport.find(f => f.name === selectedFranchiseForDetail)?.monthly || {}).sort((a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime()).map(([month, data]: [string, any]) => (
-                        <div key={month} className="bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden">
-                          <div className="bg-slate-900 p-10 text-white flex justify-between items-center">
+                        <div key={month} className="bg-white rounded-2xl md:rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden">
+                          <div className="bg-slate-900 p-6 md:p-10 text-white flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                             <div>
-                              <h3 className="text-3xl font-black">{month}</h3>
+                              <h3 className="text-2xl md:text-3xl font-black">{month}</h3>
                               <p className="text-teal-400 font-bold uppercase text-[10px] tracking-[0.2em] mt-2">Monthly Performance Summary</p>
                             </div>
-                            <div className="text-right">
+                            <div className="text-left md:text-right">
                               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Total Investment</p>
-                              <p className="text-4xl font-black text-white">Rs. {data.total.toLocaleString()}</p>
+                              <p className="text-2xl md:text-4xl font-black text-white">Rs. {data.total.toLocaleString()}</p>
                             </div>
                           </div>
                           
-                          <div className="p-10 space-y-10">
+                          <div className="p-6 md:p-10 space-y-8 md:space-y-10">
                             {/* Category Breakdown for the Month */}
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-8">
                               {[
                                 { label: 'Raw Material', icon: Package, color: 'teal' },
                                 { label: 'Equipment', icon: Wrench, color: 'purple' },
                                 { label: 'Uniform', icon: Shirt, color: 'orange' }
                               ].filter(cat => franchiseCategoryFilter === 'all' || cat.label === franchiseCategoryFilter).map(cat => (
-                                <div key={cat.label} className="bg-slate-50 p-8 rounded-[2rem] border border-slate-100 relative overflow-hidden group">
+                                <div key={cat.label} className="bg-slate-50 p-6 md:p-8 rounded-2xl md:rounded-[2rem] border border-slate-100 relative overflow-hidden group">
                                   <div className="relative z-10">
-                                    <div className={`w-12 h-12 bg-${cat.color}-100 text-${cat.color}-600 rounded-2xl flex items-center justify-center mb-6`}>
-                                      <cat.icon className="w-6 h-6" />
+                                    <div className={`w-10 h-10 md:w-12 md:h-12 bg-${cat.color}-100 text-${cat.color}-600 rounded-xl md:rounded-2xl flex items-center justify-center mb-4 md:mb-6`}>
+                                      <cat.icon className="w-5 h-5 md:w-6 md:h-6" />
                                     </div>
                                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-2">{cat.label}</p>
-                                    <p className="text-3xl font-black text-slate-900">Rs. {data.categories[cat.label].toLocaleString()}</p>
+                                    <p className="text-2xl md:text-3xl font-black text-slate-900">Rs. {data.categories[cat.label].toLocaleString()}</p>
                                     <div className="mt-6 w-full h-2 bg-white rounded-full overflow-hidden shadow-inner">
                                       <div 
                                         className={`h-full bg-${cat.color}-500 rounded-full transition-all duration-1000`} 
@@ -1947,9 +2014,9 @@ export default function AdminPanel() {
                       ? franchiseReport.filter(f => (franchiseCategoryFilter === 'all' || f.categories[franchiseCategoryFilter] > 0) && f.name.toLowerCase().includes(search.toLowerCase())) 
                       : regionReport.filter(r => r.name.toLowerCase().includes(search.toLowerCase()))
                     ).map(item => (
-                      <div key={item.name} className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden group hover:border-teal-200 hover:shadow-2xl hover:shadow-teal-900/5 transition-all">
+                      <div key={item.name} className="bg-white rounded-2xl md:rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden group hover:border-teal-200 hover:shadow-2xl hover:shadow-teal-900/5 transition-all">
                         <div 
-                          className="p-8 flex flex-col md:flex-row justify-between items-start md:items-center cursor-pointer hover:bg-slate-50 transition-colors gap-6"
+                          className="p-6 md:p-8 flex flex-col md:flex-row justify-between items-start md:items-center cursor-pointer hover:bg-slate-50 transition-colors gap-6"
                           onClick={() => {
                             if (activeTab === 'franchise') {
                               setSelectedFranchiseForDetail(item.name);
@@ -1958,20 +2025,20 @@ export default function AdminPanel() {
                             }
                           }}
                         >
-                          <div className="flex items-center gap-6">
-                            <div className="w-16 h-16 bg-white rounded-3xl flex items-center justify-center border border-slate-100 group-hover:border-teal-100 transition-all shadow-sm overflow-hidden">
+                          <div className="flex items-center gap-4 md:gap-6">
+                            <div className="w-12 h-12 md:w-16 md:h-16 bg-white rounded-2xl md:rounded-3xl flex items-center justify-center border border-slate-100 group-hover:border-teal-100 transition-all shadow-sm overflow-hidden">
                               {activeTab === 'franchise' ? (
-                                <img src="/Logo.png" alt="WEDRINK" className="w-12 h-12 object-contain" />
+                                <img src="/Logo.png" alt="WEDRINK" className="w-8 h-8 md:w-12 md:h-12 object-contain" />
                               ) : (
-                                <MapPin className="w-8 h-8 text-teal-600" />
+                                <MapPin className="w-6 h-6 md:w-8 md:h-8 text-teal-600" />
                               )}
                             </div>
                             <div>
-                              <h3 className="font-black text-2xl text-slate-900 tracking-tight">{item.name}</h3>
-                              <div className="flex flex-wrap gap-3 mt-2">
+                              <h3 className="font-black text-lg md:text-2xl text-slate-900 tracking-tight">{item.name}</h3>
+                              <div className="flex flex-wrap gap-2 md:gap-3 mt-2">
                                 {['Raw Material', 'Equipment', 'Uniform'].map(cat => (
                                   item.categories[cat] > 0 && (
-                                    <span key={cat} className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg border ${
+                                    <span key={cat} className={`text-[8px] md:text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg border ${
                                       franchiseCategoryFilter === cat 
                                         ? 'bg-teal-50 text-teal-600 border-teal-200' 
                                         : 'bg-slate-50 text-slate-400 border-slate-100'
@@ -1983,22 +2050,22 @@ export default function AdminPanel() {
                               </div>
                             </div>
                           </div>
-                          <div className="flex items-center gap-10 w-full md:w-auto">
-                            <div className="text-right">
+                          <div className="flex items-center justify-between md:justify-end gap-6 md:gap-10 w-full md:w-auto">
+                            <div className="text-left md:text-right">
                               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
                                 {franchiseCategoryFilter === 'all' ? 'Cumulative Sales' : `${franchiseCategoryFilter} Sales`}
                               </p>
-                              <p className="text-3xl font-black text-teal-600">
+                              <p className="text-xl md:text-3xl font-black text-teal-600">
                                 Rs. {(franchiseCategoryFilter === 'all' ? item.total : item.categories[franchiseCategoryFilter]).toLocaleString()}
                               </p>
                             </div>
                             {activeTab === 'franchise' ? (
-                              <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center group-hover:bg-teal-600 group-hover:text-white transition-all shadow-sm">
-                                <ArrowRight className="w-6 h-6" />
+                              <div className="w-10 h-10 md:w-12 md:h-12 bg-slate-100 rounded-xl md:rounded-2xl flex items-center justify-center group-hover:bg-teal-600 group-hover:text-white transition-all shadow-sm">
+                                <ArrowRight className="w-5 h-5 md:w-6 md:h-6" />
                               </div>
                             ) : (
-                              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${expandedLedger === item.name ? 'bg-teal-600 text-white rotate-180' : 'bg-slate-100 text-slate-400'}`}>
-                                <Plus className={`w-6 h-6 transition-transform ${expandedLedger === item.name ? 'rotate-45' : ''}`} />
+                              <div className={`w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl flex items-center justify-center transition-all ${expandedLedger === item.name ? 'bg-teal-600 text-white rotate-180' : 'bg-slate-100 text-slate-400'}`}>
+                                <Plus className={`w-5 h-5 md:w-6 md:h-6 transition-transform ${expandedLedger === item.name ? 'rotate-45' : ''}`} />
                               </div>
                             )}
                           </div>
@@ -2008,27 +2075,27 @@ export default function AdminPanel() {
                           <motion.div 
                             initial={{ height: 0, opacity: 0 }}
                             animate={{ height: 'auto', opacity: 1 }}
-                            className="p-10 border-t border-slate-100 bg-slate-50/50 space-y-10"
+                            className="p-6 md:p-10 border-t border-slate-100 bg-slate-50/50 space-y-8 md:space-y-10"
                           >
                             {/* Category Breakdown */}
                             <div>
-                              <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-6 flex items-center gap-3">
-                                <BarChart3 className="w-5 h-5 text-teal-600" />
+                              <h4 className="text-xs md:text-sm font-black text-slate-900 uppercase tracking-widest mb-6 flex items-center gap-3">
+                                <BarChart3 className="w-4 h-4 md:w-5 md:h-5 text-teal-600" />
                                 Category Performance
                               </h4>
-                              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-8">
                                 {[
                                   { label: 'Raw Material', icon: Package, color: 'teal' },
                                   { label: 'Equipment', icon: Wrench, color: 'purple' },
                                   { label: 'Uniform', icon: Shirt, color: 'orange' }
                                 ].map(cat => (
-                                  <div key={cat.label} className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm relative overflow-hidden group hover:border-teal-200 transition-all">
+                                  <div key={cat.label} className="bg-white p-6 md:p-8 rounded-2xl md:rounded-[2rem] border border-slate-200 shadow-sm relative overflow-hidden group hover:border-teal-200 transition-all">
                                     <div className="relative z-10">
-                                      <div className={`w-12 h-12 bg-${cat.color}-100 text-${cat.color}-600 rounded-2xl flex items-center justify-center mb-6`}>
-                                        <cat.icon className="w-6 h-6" />
+                                      <div className={`w-10 h-10 md:w-12 md:h-12 bg-${cat.color}-100 text-${cat.color}-600 rounded-xl md:rounded-2xl flex items-center justify-center mb-4 md:mb-6`}>
+                                        <cat.icon className="w-5 h-5 md:w-6 md:h-6" />
                                       </div>
                                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-2">{cat.label}</p>
-                                      <p className="text-3xl font-black text-slate-900">Rs. {item.categories[cat.label].toLocaleString()}</p>
+                                      <p className="text-2xl md:text-3xl font-black text-slate-900">Rs. {item.categories[cat.label].toLocaleString()}</p>
                                       <div className="mt-6 w-full h-2 bg-slate-100 rounded-full overflow-hidden shadow-inner">
                                         <div 
                                           className={`h-full bg-${cat.color}-500 rounded-full transition-all duration-1000`} 
@@ -2269,41 +2336,41 @@ export default function AdminPanel() {
         <motion.div 
           initial={{ opacity: 0, scale: 0.95, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
-          className="bg-white rounded-[2.5rem] p-10 w-full max-w-md shadow-2xl"
+          className="bg-white rounded-2xl md:rounded-[2.5rem] p-6 md:p-10 w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto"
         >
-          <div className="flex justify-between items-center mb-8">
-            <h3 className="text-2xl font-black text-slate-900">Add New Admin</h3>
+          <div className="flex justify-between items-center mb-6 md:mb-8">
+            <h3 className="text-xl md:text-2xl font-black text-slate-900">Add New Admin</h3>
             <button onClick={() => setIsAddingAdmin(false)} className="text-slate-400 hover:text-slate-600">
               <X className="w-6 h-6" />
             </button>
           </div>
-          <div className="space-y-6">
+          <div className="space-y-4 md:space-y-6">
             <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Email Address</label>
+              <label className="block text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Email Address</label>
               <input 
                 type="email"
                 value={newAdmin.email}
                 onChange={(e) => setNewAdmin({...newAdmin, email: e.target.value})}
                 placeholder="admin@example.com"
-                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl md:rounded-2xl px-4 py-2.5 md:py-3 font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Password</label>
+              <label className="block text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Password</label>
               <input 
                 type="text"
                 value={newAdmin.password}
                 onChange={(e) => setNewAdmin({...newAdmin, password: e.target.value})}
                 placeholder="Set Password"
-                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl md:rounded-2xl px-4 py-2.5 md:py-3 font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               />
             </div>
             
             <div className="space-y-3">
-              <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Permissions</label>
-              <div className="grid grid-cols-2 gap-3">
+              <label className="block text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Permissions</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 md:gap-3">
                 {Object.keys(newAdmin.permissions || {}).map((perm) => (
-                  <label key={perm} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100 cursor-pointer hover:bg-teal-50 transition-colors">
+                  <label key={perm} className="flex items-center gap-3 p-2.5 md:p-3 bg-slate-50 rounded-lg md:rounded-xl border border-slate-100 cursor-pointer hover:bg-teal-50 transition-colors">
                     <input 
                       type="checkbox"
                       checked={(newAdmin.permissions as any)[perm]}
@@ -2316,7 +2383,7 @@ export default function AdminPanel() {
                       })}
                       className="w-4 h-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
                     />
-                    <span className="text-xs font-bold text-slate-600 capitalize">{perm}</span>
+                    <span className="text-[10px] md:text-xs font-bold text-slate-600 capitalize">{perm}</span>
                   </label>
                 ))}
               </div>
@@ -2339,20 +2406,23 @@ export default function AdminPanel() {
         <motion.div 
           initial={{ opacity: 0, scale: 0.95, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
-          className="bg-white rounded-[2.5rem] p-10 w-full max-w-md shadow-2xl"
+          className="bg-white rounded-2xl md:rounded-[2.5rem] p-6 md:p-10 w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto"
         >
-          <div className="flex justify-between items-center mb-8">
-            <h3 className="text-2xl font-black text-slate-900">Edit Permissions</h3>
+          <div className="flex justify-between items-center mb-6 md:mb-8">
+            <h3 className="text-xl md:text-2xl font-black text-slate-900">Edit Permissions</h3>
             <button onClick={() => setEditingAdmin(null)} className="text-slate-400 hover:text-slate-600">
               <X className="w-6 h-6" />
             </button>
           </div>
           <div className="space-y-6">
-            <p className="text-sm font-bold text-slate-500">Editing permissions for: <span className="text-slate-900">{editingAdmin.email}</span></p>
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Editing Access For</p>
+              <p className="font-black text-slate-900 text-sm">{editingAdmin.email}</p>
+            </div>
             
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 md:gap-3">
               {Object.keys(editingAdmin.permissions).map((perm) => (
-                <label key={perm} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100 cursor-pointer hover:bg-teal-50 transition-colors">
+                <label key={perm} className="flex items-center gap-3 p-2.5 md:p-3 bg-slate-50 rounded-lg md:rounded-xl border border-slate-100 cursor-pointer hover:bg-teal-50 transition-colors">
                   <input 
                     type="checkbox"
                     checked={(editingAdmin.permissions as any)[perm]}
@@ -2365,14 +2435,14 @@ export default function AdminPanel() {
                     })}
                     className="w-4 h-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
                   />
-                  <span className="text-xs font-bold text-slate-600 capitalize">{perm}</span>
+                  <span className="text-[10px] md:text-xs font-bold text-slate-600 capitalize">{perm}</span>
                 </label>
               ))}
             </div>
 
             <button 
               onClick={handleUpdateAdmin}
-              className="w-full bg-teal-600 text-white py-4 rounded-2xl font-bold text-lg hover:bg-teal-700 transition-all shadow-lg shadow-teal-200"
+              className="w-full bg-teal-600 text-white py-3 md:py-4 rounded-xl md:rounded-2xl font-bold text-base md:text-lg hover:bg-teal-700 transition-all shadow-lg shadow-teal-200"
             >
               Update Permissions
             </button>
@@ -2389,36 +2459,36 @@ export default function AdminPanel() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="bg-white rounded-[2.5rem] w-full max-w-md overflow-hidden shadow-2xl"
+              className="bg-white rounded-2xl md:rounded-[2.5rem] w-full max-w-md overflow-hidden shadow-2xl max-h-[90vh] overflow-y-auto"
             >
-              <div className="bg-slate-900 p-8 text-white flex justify-between items-center">
+              <div className="bg-slate-900 p-6 md:p-8 text-white flex justify-between items-center">
                 <div>
-                  <h3 className="text-2xl font-black">Add User</h3>
-                  <p className="text-teal-400 font-bold uppercase text-xs tracking-widest mt-1">Franchise Access</p>
+                  <h3 className="text-xl md:text-2xl font-black">Add User</h3>
+                  <p className="text-teal-400 font-bold uppercase text-[10px] md:text-xs tracking-widest mt-1">Franchise Access</p>
                 </div>
                 <button onClick={() => setIsAddingUser(false)} className="p-2 hover:bg-white/10 rounded-xl transition-colors">
                   <X className="w-6 h-6" />
                 </button>
               </div>
-              <div className="p-8 space-y-6">
+              <div className="p-6 md:p-8 space-y-4 md:space-y-6">
                 <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Gmail Address</label>
+                  <label className="block text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Gmail Address</label>
                   <input 
                     type="email"
                     value={newUser.email}
                     onChange={(e) => setNewUser({...newUser, email: e.target.value})}
                     placeholder="franchise@gmail.com"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl md:rounded-2xl px-4 py-2.5 md:py-3 font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Password</label>
+                  <label className="block text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Password</label>
                   <input 
                     type="text"
                     value={newUser.password}
                     onChange={(e) => setNewUser({...newUser, password: e.target.value})}
                     placeholder="Set Password"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl md:rounded-2xl px-4 py-2.5 md:py-3 font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
                   />
                 </div>
                 <div>
@@ -2839,17 +2909,17 @@ export default function AdminPanel() {
               </div>
             </div>
 
-            <div className="p-8 overflow-y-auto space-y-8">
-              <div className="grid grid-cols-2 gap-8">
-                <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100">
+            <div className="p-4 md:p-8 overflow-y-auto space-y-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8">
+                <div className="bg-slate-50 p-4 md:p-6 rounded-2xl md:rounded-3xl border border-slate-100">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Franchise</p>
-                  <p className="text-xl font-black text-slate-900">{selectedOrder.franchiseName}</p>
-                  <p className="text-sm text-slate-500 font-medium mt-1">{selectedOrder.regionName}</p>
+                  <p className="text-lg md:text-xl font-black text-slate-900">{selectedOrder.franchiseName}</p>
+                  <p className="text-xs md:text-sm text-slate-500 font-medium mt-1">{selectedOrder.regionName}</p>
                 </div>
-                <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                <div className="bg-slate-50 p-4 md:p-6 rounded-2xl md:rounded-3xl border border-slate-100">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Date & Time</p>
-                  <p className="text-xl font-black text-slate-900">{new Date(selectedOrder.date).toLocaleDateString()}</p>
-                  <p className="text-sm text-slate-500 font-medium mt-1">{new Date(selectedOrder.date).toLocaleTimeString()}</p>
+                  <p className="text-lg md:text-xl font-black text-slate-900">{new Date(selectedOrder.date).toLocaleDateString()}</p>
+                  <p className="text-xs md:text-sm text-slate-500 font-medium mt-1">{new Date(selectedOrder.date).toLocaleTimeString()}</p>
                 </div>
               </div>
 
@@ -2887,7 +2957,7 @@ export default function AdminPanel() {
 
               <div className="flex flex-col gap-4">
                 {((selectedOrder.discount && selectedOrder.discount > 0) || (selectedOrder.balanceAdjustment && selectedOrder.balanceAdjustment > 0)) && (
-                  <div className="bg-slate-50 p-6 rounded-[2.5rem] border border-slate-100 space-y-3">
+                  <div className="bg-slate-50 p-4 md:p-6 rounded-2xl md:rounded-[2.5rem] border border-slate-100 space-y-3">
                     {selectedOrder.totalAmount && (
                       <div className="flex justify-between items-center text-sm">
                         <span className="font-bold text-slate-500">Subtotal</span>
@@ -2897,7 +2967,7 @@ export default function AdminPanel() {
                     {selectedOrder.discount && selectedOrder.discount > 0 && (
                       <div className="flex justify-between items-center text-sm">
                         <span className="font-bold text-slate-500">
-                          Discount Applied {selectedOrder.discountPercent ? `(${selectedOrder.discountPercent}%)` : ''}
+                          Discount {selectedOrder.discountPercent ? `(${selectedOrder.discountPercent}%)` : ''}
                         </span>
                         <span className="font-black text-green-600">- Rs. {selectedOrder.discount.toLocaleString()}</span>
                       </div>
@@ -2910,12 +2980,12 @@ export default function AdminPanel() {
                     )}
                   </div>
                 )}
-                <div className="flex justify-between items-center bg-teal-600 p-8 rounded-[2.5rem] text-white shadow-xl shadow-teal-100">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-teal-600 p-6 md:p-8 rounded-2xl md:rounded-[2.5rem] text-white shadow-xl shadow-teal-100 gap-4">
                   <div>
-                    <p className="text-xs font-bold text-teal-100 uppercase tracking-widest mb-1">Final Amount Paid</p>
-                    <p className="text-4xl font-black">Rs. {selectedOrder.finalAmount.toLocaleString()}</p>
+                    <p className="text-[10px] font-bold text-teal-100 uppercase tracking-widest mb-1">Final Amount Paid</p>
+                    <p className="text-2xl md:text-4xl font-black">Rs. {selectedOrder.finalAmount.toLocaleString()}</p>
                   </div>
-                  <div className={`px-6 py-2 rounded-2xl font-black uppercase tracking-widest text-sm ${
+                  <div className={`px-4 md:px-6 py-2 rounded-xl md:rounded-2xl font-black uppercase tracking-widest text-[10px] md:text-sm ${
                     selectedOrder.status === 'Delivered' ? 'bg-white/20 text-white' : 'bg-white text-teal-600'
                   }`}>
                     {selectedOrder.status}
@@ -2925,32 +2995,32 @@ export default function AdminPanel() {
 
               {selectedOrder.paymentScreenshots && selectedOrder.paymentScreenshots.length > 0 && (
                 <div>
-                  <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-4">Payment Proof</h4>
-                  <div className="grid grid-cols-2 gap-4">
+                  <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest mb-4">Payment Proof</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {selectedOrder.paymentScreenshots.map((url, idx) => (
-                      <a key={idx} href={url} target="_blank" rel="noreferrer" className="block rounded-[2rem] overflow-hidden border-4 border-slate-100 shadow-lg hover:border-teal-500 transition-all">
-                        <img src={url} alt={`Payment Proof ${idx + 1}`} className="w-full h-40 object-cover" />
+                      <a key={idx} href={url} target="_blank" rel="noreferrer" className="block rounded-2xl md:rounded-[2rem] overflow-hidden border-4 border-slate-100 shadow-lg hover:border-teal-500 transition-all">
+                        <img src={url} alt={`Payment Proof ${idx + 1}`} className="w-full h-32 md:h-40 object-cover" />
                       </a>
                     ))}
                   </div>
                 </div>
               )}
 
-              <div className="flex justify-between items-center pt-6">
+              <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 pt-6">
                 <button 
                   onClick={() => setEditingOrder(selectedOrder)}
-                  className="px-8 py-4 bg-teal-50 text-teal-600 rounded-2xl font-black hover:bg-teal-100 transition-all flex items-center gap-2"
+                  className="px-6 md:px-8 py-3 md:py-4 bg-teal-50 text-teal-600 rounded-xl md:rounded-2xl font-black hover:bg-teal-100 transition-all flex items-center justify-center gap-2 text-sm"
                 >
-                  <Edit2 className="w-5 h-5" />
+                  <Edit2 className="w-4 h-4 md:w-5 md:h-5" />
                   Edit Order
                 </button>
                 <button 
                   onClick={() => {
                     setOrderToCancel(selectedOrder);
                   }}
-                  className="px-8 py-4 bg-red-50 text-red-600 rounded-2xl font-black hover:bg-red-100 transition-all flex items-center gap-2"
+                  className="px-6 md:px-8 py-3 md:py-4 bg-red-50 text-red-600 rounded-xl md:rounded-2xl font-black hover:bg-red-100 transition-all flex items-center justify-center gap-2 text-sm"
                 >
-                  <Trash2 className="w-5 h-5" />
+                  <Trash2 className="w-4 h-4 md:w-5 md:h-5" />
                   Cancel Order
                 </button>
               </div>
