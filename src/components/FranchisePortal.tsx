@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, ChangeEvent } from "react";
+import { useState, useMemo, useEffect, ChangeEvent, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   Palette, 
@@ -31,7 +31,7 @@ import {
 import { regions, products, Region, Franchise, Product } from "../data";
 import { db, auth } from "../firebase";
 import { signOut } from "firebase/auth";
-import { collection, addDoc, query, where, onSnapshot, updateDoc, doc, getDoc } from "firebase/firestore";
+import { collection, addDoc, query, where, onSnapshot, updateDoc, doc, getDoc, writeBatch } from "firebase/firestore";
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -132,7 +132,7 @@ export default function FranchisePortal() {
     return () => unsubscribe();
   }, []);
 
-  const addToCart = (product: Product) => {
+  const addToCart = useCallback((product: Product) => {
     const invItem = inventory.find(i => i.id === product.id);
     const maxQty = invItem ? invItem.quantity : Infinity;
     
@@ -147,9 +147,9 @@ export default function FranchisePortal() {
       if (maxQty < 1) return prev;
       return [...prev, { ...product, quantity: 1 }];
     });
-  };
+  }, [inventory]);
 
-  const updateQuantity = (id: string, delta: number) => {
+  const updateQuantity = useCallback((id: string, delta: number) => {
     const invItem = inventory.find(i => i.id === id);
     const maxQty = invItem ? invItem.quantity : Infinity;
 
@@ -160,9 +160,9 @@ export default function FranchisePortal() {
       }
       return item;
     }).filter(item => item.quantity > 0));
-  };
+  }, [inventory]);
 
-  const totalAmount = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const totalAmount = useMemo(() => cart.reduce((sum, item) => sum + (item.price * item.quantity), 0), [cart]);
 
   const handlePlaceOrder = async () => {
     setOrderError(null);
@@ -201,35 +201,45 @@ export default function FranchisePortal() {
     };
 
     try {
-      console.log("Attempting to place order with payload:", newOrder);
+      const batch = writeBatch(db);
       
-      // Add a 10-second timeout to prevent infinite hanging
-      const docRef = await Promise.race([
-        addDoc(collection(db, "orders"), newOrder),
+      // 1. Create the order document
+      const orderRef = doc(collection(db, "orders"));
+      batch.set(orderRef, newOrder);
+      
+      // 2. Prepare inventory updates
+      // We need to fetch current quantities first to ensure we don't go negative or overwrite incorrectly
+      // However, for speed, we can fetch them in parallel
+      const inventorySnapshots = await Promise.all(
+        cart.map(item => getDoc(doc(db, "inventory", item.id)))
+      );
+
+      inventorySnapshots.forEach((invDoc, index) => {
+        if (invDoc.exists()) {
+          const item = cart[index];
+          const currentQty = invDoc.data().quantity;
+          const invDocRef = doc(db, "inventory", item.id);
+          batch.update(invDocRef, { quantity: Math.max(0, currentQty - item.quantity) });
+        }
+      });
+
+      // 3. Commit the batch
+      await Promise.race([
+        batch.commit(),
         new Promise<never>((_, reject) => 
-          setTimeout(() => reject(new Error("Request timed out. Please check your internet connection or Firebase rules.")), 10000)
+          setTimeout(() => reject(new Error("Request timed out. Please check your internet connection.")), 15000)
         )
       ]);
       
-      console.log("Order placed successfully with ID:", docRef.id);
+      console.log("Order placed and inventory updated successfully");
       
-      // Deduct inventory automatically
-      for (const item of cart) {
-        const invDocRef = doc(db, "inventory", item.id);
-        const invDoc = await getDoc(invDocRef);
-        if (invDoc.exists()) {
-          const currentQty = invDoc.data().quantity;
-          await updateDoc(invDocRef, { quantity: Math.max(0, currentQty - item.quantity) });
-        }
-      }
-
-      setCurrentOrderId(docRef.id);
+      setCurrentOrderId(orderRef.id);
       setStep(4);
     } catch (error) {
       console.error("Error placing order:", error);
       const errorMessage = error instanceof Error ? error.message : "Failed to place order. Please try again.";
       setOrderError(errorMessage);
-      alert(`Order Error: ${errorMessage}\n\nIf this is a permission error, please check your Firebase Firestore Security Rules.`);
+      alert(`Order Error: ${errorMessage}`);
     } finally {
       setIsPlacingOrder(false);
     }
@@ -274,6 +284,57 @@ export default function FranchisePortal() {
     setDiscountPercent(0);
     setBalanceAdjustment(0);
     setPaymentScreenshotUrls([]);
+  };
+
+  const exportOrderHistoryToPDF = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(22);
+    doc.setTextColor(13, 148, 136);
+    doc.text("WEDRINK PURCHASE HISTORY", 14, 20);
+    doc.setFontSize(10);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Franchise: ${selectedFranchise?.name}`, 14, 28);
+    doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 34);
+
+    const tableColumn = ["Date", "Order ID", "Items", "Amount", "Status"];
+    const tableRows = orderHistory.map(order => [
+      new Date(order.date).toLocaleDateString(),
+      `#${order.id.slice(-8)}`,
+      order.items.length.toString(),
+      `Rs. ${order.finalAmount.toLocaleString()}`,
+      order.status
+    ]);
+
+    autoTable(doc, {
+      startY: 40,
+      head: [tableColumn],
+      body: tableRows,
+      theme: 'grid',
+      headStyles: { fillColor: [13, 148, 136] }
+    });
+
+    doc.save(`Purchase_History_${new Date().toISOString().slice(0, 10)}.pdf`);
+  };
+
+  const exportOrderHistoryToExcel = () => {
+    const worksheetData = [
+      ["WEDRINK PURCHASE HISTORY"],
+      [`Franchise: ${selectedFranchise?.name}`],
+      [`Generated on: ${new Date().toLocaleString()}`],
+      [],
+      ["Date", "Order ID", "Items", "Amount", "Status"],
+      ...orderHistory.map(order => [
+        new Date(order.date).toLocaleDateString(),
+        `#${order.id.slice(-8)}`,
+        order.items.length,
+        order.finalAmount,
+        order.status
+      ])
+    ];
+    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Purchase History");
+    XLSX.writeFile(workbook, `Purchase_History_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
   const payOrder = (order: Order) => {
@@ -498,7 +559,25 @@ export default function FranchisePortal() {
           <AnimatePresence mode="wait">
             {showHistory ? (
             <motion.div key="history" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
-              <h2 className="text-2xl font-bold">Purchase Records</h2>
+              <div className="flex justify-between items-center">
+                <h2 className="text-2xl font-bold">Purchase Records</h2>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={exportOrderHistoryToPDF}
+                    className="px-4 py-2 bg-white text-slate-600 rounded-xl border border-slate-100 hover:bg-slate-50 transition-all shadow-sm flex items-center gap-2 text-xs font-bold"
+                  >
+                    <FileText className="w-4 h-4 text-teal-600" />
+                    PDF
+                  </button>
+                  <button 
+                    onClick={exportOrderHistoryToExcel}
+                    className="px-4 py-2 bg-white text-slate-600 rounded-xl border border-slate-100 hover:bg-slate-50 transition-all shadow-sm flex items-center gap-2 text-xs font-bold"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-green-600" />
+                    Excel
+                  </button>
+                </div>
+              </div>
               <div className="grid gap-4">
                 {orderHistory.map((order) => (
                   <div key={order.id} className="bg-white/60 backdrop-blur-md rounded-2xl p-6 shadow-sm border border-white/20 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
