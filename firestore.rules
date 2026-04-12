@@ -59,10 +59,12 @@ service cloud.firestore {
     }
 
     function isValidInventory(data) {
-      return data.keys().hasAll(['name', 'quantity', 'type']) &&
+      return data.keys().hasAll(['name', 'quantity', 'type', 'price', 'unit']) &&
              data.name is string &&
              data.quantity is number &&
-             data.type is string;
+             data.type is string &&
+             data.price is number &&
+             data.unit is string;
     }
 
     // ===============================================================
@@ -105,7 +107,8 @@ service cloud.firestore {
       // Everyone authenticated can read inventory (to place orders)
       allow read: if isAuthenticated();
       // Only admins can modify inventory
-      allow write: if isAdmin() && isValidInventory(request.resource.data);
+      allow create, update: if isAdmin() && isValidInventory(request.resource.data);
+      allow delete: if isAdmin();
     }
   }
 }
