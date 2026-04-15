@@ -514,6 +514,10 @@ export default function AdminPanel() {
   };
 
   const updateInventoryItem = async (itemId: string, updates: Partial<InventoryItem>) => {
+    if (!updates.name || updates.price === undefined || updates.price === '' as any || !updates.unit) {
+      alert("Please fill in all fields (Name, Price, Unit) before saving.");
+      return;
+    }
     const invDocRef = doc(db, "inventory", itemId);
     await updateDoc(invDocRef, updates);
     setEditingItem(null);
@@ -529,11 +533,14 @@ export default function AdminPanel() {
   };
 
   const addNewInventoryItem = async () => {
-    if (!newItem.name || !newItem.type || newItem.price === undefined || !newItem.unit) return;
+    if (!newItem.name || !newItem.type || newItem.price === undefined || newItem.price === '' as any || !newItem.unit) {
+      alert("Please fill in all fields (Name, Price, Unit) before adding.");
+      return;
+    }
     const id = `${newItem.type?.toUpperCase().slice(0, 3)}${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
     await setDoc(doc(db, "inventory", id), { ...newItem, id });
     setIsAddingItem(false);
-    setNewItem({ name: '', quantity: 0, type: 'raw', price: 0, unit: '' });
+    setNewItem({ name: '', quantity: '' as any, type: 'raw', price: '' as any, unit: '' });
   };
 
   const addUser = async () => {
@@ -2603,7 +2610,7 @@ export default function AdminPanel() {
                         <div key={item.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
                           <div className="flex-1">
                             <p className="font-bold text-slate-900">{item.name}</p>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Rs. {item.price.toLocaleString()}</p>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Rs. {(item.price || 0).toLocaleString()}</p>
                           </div>
                           <div className="flex items-center gap-4">
                             <div className="flex items-center gap-2 bg-white rounded-xl border border-slate-200 p-1">
@@ -2647,14 +2654,14 @@ export default function AdminPanel() {
                           onClick={() => addItemToEditingOrder({
                             id: item.id,
                             name: item.name,
-                            price: item.price,
+                            price: item.price || 0,
                             unit: item.unit,
                             category: (item.type === 'raw' ? 'Raw Material' : item.type === 'equipment' ? 'Equipment' : 'Uniform')
                           })}
                           className="flex flex-col items-start p-3 bg-white border border-slate-200 rounded-xl hover:border-teal-500 hover:shadow-md transition-all text-left group"
                         >
                           <p className="font-bold text-slate-900 text-xs group-hover:text-teal-600 transition-colors">{item.name}</p>
-                          <p className="text-[10px] text-slate-400 font-bold">Rs. {item.price.toLocaleString()}</p>
+                          <p className="text-[10px] text-slate-400 font-bold">Rs. {(item.price || 0).toLocaleString()}</p>
                         </button>
                       ))}
                     </div>
@@ -2689,11 +2696,11 @@ export default function AdminPanel() {
                     <div className="pt-6 border-t border-white/10 space-y-3">
                       <div className="flex justify-between text-sm">
                         <span className="text-slate-400 font-bold uppercase tracking-widest">Subtotal</span>
-                        <span className="font-bold">Rs. {editingOrder.items.reduce((sum, i) => sum + (i.price * i.quantity), 0).toLocaleString()}</span>
+                        <span className="font-bold">Rs. {editingOrder.items.reduce((sum, i) => sum + ((i.price || 0) * (i.quantity || 1)), 0).toLocaleString()}</span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-slate-400 font-bold uppercase tracking-widest">Discount</span>
-                        <span className="font-bold text-green-400">- Rs. {((editingOrder.items.reduce((sum, i) => sum + (i.price * i.quantity), 0) * (editingOrder.discountPercent || 0)) / 100).toLocaleString()}</span>
+                        <span className="font-bold text-green-400">- Rs. {((editingOrder.items.reduce((sum, i) => sum + ((i.price || 0) * (i.quantity || 1)), 0) * (editingOrder.discountPercent || 0)) / 100).toLocaleString()}</span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-slate-400 font-bold uppercase tracking-widest">Balance Used</span>
@@ -2703,8 +2710,8 @@ export default function AdminPanel() {
                         <span className="font-black uppercase tracking-widest text-sm">Final Amount</span>
                         <span className="text-3xl font-black text-teal-400">
                           Rs. {(
-                            editingOrder.items.reduce((sum, i) => sum + (i.price * i.quantity), 0) - 
-                            (editingOrder.items.reduce((sum, i) => sum + (i.price * i.quantity), 0) * (editingOrder.discountPercent || 0) / 100) - 
+                            editingOrder.items.reduce((sum, i) => sum + ((i.price || 0) * (i.quantity || 1)), 0) - 
+                            (editingOrder.items.reduce((sum, i) => sum + ((i.price || 0) * (i.quantity || 1)), 0) * (editingOrder.discountPercent || 0) / 100) - 
                             (editingOrder.balanceAdjustment || 0)
                           ).toLocaleString()}
                         </span>
@@ -2799,7 +2806,7 @@ export default function AdminPanel() {
                   <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Item Name</label>
                   <input 
                     type="text" 
-                    value={editingItem.name}
+                    value={editingItem.name || ''}
                     onChange={(e) => setEditingItem({ ...editingItem, name: e.target.value })}
                     className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-6 py-4 font-bold text-slate-900 focus:outline-none focus:border-teal-500 transition-all"
                   />
@@ -2821,8 +2828,8 @@ export default function AdminPanel() {
                     <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Price (Rs.)</label>
                     <input 
                       type="number" 
-                      value={editingItem.price}
-                      onChange={(e) => setEditingItem({ ...editingItem, price: parseInt(e.target.value) })}
+                      value={editingItem.price ?? ''}
+                      onChange={(e) => setEditingItem({ ...editingItem, price: e.target.value === '' ? '' as any : Number(e.target.value) })}
                       className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-6 py-4 font-bold text-slate-900 focus:outline-none focus:border-teal-500 transition-all"
                     />
                   </div>
@@ -2830,7 +2837,7 @@ export default function AdminPanel() {
                     <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Unit</label>
                     <input 
                       type="text" 
-                      value={editingItem.unit}
+                      value={editingItem.unit || ''}
                       onChange={(e) => setEditingItem({ ...editingItem, unit: e.target.value })}
                       className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-6 py-4 font-bold text-slate-900 focus:outline-none focus:border-teal-500 transition-all"
                       placeholder="e.g. carton"
@@ -2841,8 +2848,8 @@ export default function AdminPanel() {
                   <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Quantity</label>
                   <input 
                     type="number" 
-                    value={editingItem.quantity}
-                    onChange={(e) => setEditingItem({ ...editingItem, quantity: parseInt(e.target.value) })}
+                    value={editingItem.quantity ?? ''}
+                    onChange={(e) => setEditingItem({ ...editingItem, quantity: e.target.value === '' ? '' as any : Number(e.target.value) })}
                     className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-6 py-4 font-bold text-slate-900 focus:outline-none focus:border-teal-500 transition-all"
                   />
                 </div>
@@ -2884,7 +2891,7 @@ export default function AdminPanel() {
                   <input 
                     type="text" 
                     placeholder="Enter item name..."
-                    value={newItem.name}
+                    value={newItem.name || ''}
                     onChange={(e) => setNewItem({ ...newItem, name: e.target.value })}
                     className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-6 py-4 font-bold text-slate-900 focus:outline-none focus:border-teal-500 transition-all"
                   />
@@ -2906,8 +2913,8 @@ export default function AdminPanel() {
                     <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Price (Rs.)</label>
                     <input 
                       type="number" 
-                      value={newItem.price}
-                      onChange={(e) => setNewItem({ ...newItem, price: parseInt(e.target.value) })}
+                      value={newItem.price ?? ''}
+                      onChange={(e) => setNewItem({ ...newItem, price: e.target.value === '' ? '' as any : Number(e.target.value) })}
                       className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-6 py-4 font-bold text-slate-900 focus:outline-none focus:border-teal-500 transition-all"
                     />
                   </div>
@@ -2915,7 +2922,7 @@ export default function AdminPanel() {
                     <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Unit</label>
                     <input 
                       type="text" 
-                      value={newItem.unit}
+                      value={newItem.unit || ''}
                       onChange={(e) => setNewItem({ ...newItem, unit: e.target.value })}
                       className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-6 py-4 font-bold text-slate-900 focus:outline-none focus:border-teal-500 transition-all"
                       placeholder="e.g. carton"
@@ -2926,8 +2933,8 @@ export default function AdminPanel() {
                   <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Initial Quantity</label>
                   <input 
                     type="number" 
-                    value={newItem.quantity}
-                    onChange={(e) => setNewItem({ ...newItem, quantity: parseInt(e.target.value) })}
+                    value={newItem.quantity ?? ''}
+                    onChange={(e) => setNewItem({ ...newItem, quantity: e.target.value === '' ? '' as any : Number(e.target.value) })}
                     className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-6 py-4 font-bold text-slate-900 focus:outline-none focus:border-teal-500 transition-all"
                   />
                 </div>
