@@ -1188,19 +1188,19 @@ export default function FranchisePortal() {
                     <div className="space-y-4 bg-slate-50 p-5 rounded-2xl border border-slate-100">
                       <div>
                         <p className="text-xs text-slate-400 font-bold uppercase mb-1">Bank Name</p>
-                        <p className="font-bold text-slate-900 text-lg">JS Bank</p>
+                        <p className="font-bold text-slate-900 text-lg">MEEZAN Bank</p>
                       </div>
                       <div>
                         <p className="text-xs text-slate-400 font-bold uppercase mb-1">Account Title</p>
-                        <p className="font-bold text-slate-900 text-lg">Wedrink supply chain (SMC-PVT)Limited</p>
+                        <p className="font-bold text-slate-900 text-lg">DB LINK (PRIVATE) LIMITED</p>
                       </div>
                       <div>
                         <p className="text-xs text-slate-400 font-bold uppercase mb-1">IBAN</p>
                         <div className="flex items-center gap-2 mt-1">
-                          <p className="font-mono font-bold text-slate-900 text-base break-all bg-white p-3 rounded-xl border border-slate-200 flex-1">PK07JSBL9557000002750554</p>
+                          <p className="font-mono font-bold text-slate-900 text-base break-all bg-white p-3 rounded-xl border border-slate-200 flex-1">PK74MEZN0002460104429936</p>
                           <button 
                             onClick={() => {
-                              navigator.clipboard.writeText("PK07JSBL9557000002750554");
+                              navigator.clipboard.writeText("PK74MEZN0002460104429936");
                               alert("IBAN Copied!");
                             }}
                             className="p-3 bg-teal-50 text-teal-600 rounded-xl hover:bg-teal-100 transition-all"
