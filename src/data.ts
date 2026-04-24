@@ -32,6 +32,7 @@ export const regions: Region[] = [
       bankName: 'Meezan Bank',
       accountTitle: 'Wedrink Islamabad Office',
       iban: '000123456789'
+        },
     franchises: [
       { id: 'f-isb-1', name: 'G-9 Markaz (Tehzeeb)', city: 'Islamabad' },
       { id: 'f-isb-2', name: 'I-8 Markaz (Pakland)', city: 'Islamabad' },
@@ -62,6 +63,7 @@ export const regions: Region[] = [
       bankName: 'Meezan Bank',
       accountTitle: 'Wedrink Islamabad Office',
       iban: '000123456789'
+        },
     franchises: [
       { id: 'f-rwp-1', name: 'Bahria Ph 7 (Fortune Plaza)', city: 'Rawalpindi' },
       { id: 'f-rwp-2', name: 'Satellite Town (D-Block)', city: 'Rawalpindi' },
@@ -78,6 +80,7 @@ export const regions: Region[] = [
       bankName: 'Meezan Bank',
       accountTitle: 'DB LINK (PRIVATE) LIMITED',
       iban: 'PK74MEZN0002460104429936'
+        },
     franchises: [
       { id: 'f-lhr-1', name: 'Barkat Market', city: 'Lahore' },
       { id: 'f-lhr-2', name: 'Model Town Link Road', city: 'Lahore' },
@@ -114,6 +117,7 @@ export const regions: Region[] = [
       bankName: 'Meezan Bank',
       accountTitle: 'Wedrink Faisalabad Office',
       iban: '000123456789'
+        },
     franchises: [
       { id: 'f-fsd-1', name: 'Lyallpur Galleria', city: 'Faisalabad' },
     //{ id: 'f-fsd-2', name: 'Kohinoor Susan Road', city: 'Faisalabad' },
@@ -127,6 +131,7 @@ export const regions: Region[] = [
       bankName: 'Meezan Bank',
       accountTitle: 'Wedrink Gujrat Office',
       iban: '000123456789'
+        },
     franchises: [
       { id: 'f-gjt-1', name: 'Gujrat Gymkhana', city: 'Gujrat' },
     ]
