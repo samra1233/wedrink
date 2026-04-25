@@ -340,6 +340,27 @@ export default function AdminPanel() {
       })
     });
   };
+  const [discountName, setDiscountName] = useState("");
+  const [discountQty, setDiscountQty] = useState(1);
+
+  const addFreeGiftToEditingOrder = () => {
+    if (!editingOrder || !discountName || discountQty <= 0) return;
+    const giftItem = {
+      id: `GIFT-${Date.now()}`,
+      name: `${discountName} (Free Gift)`,
+      price: 0,
+      quantity: discountQty,
+      category: 'Raw Material' as const,
+      unit: 'pcs'
+    };
+    setEditingOrder({
+      ...editingOrder,
+      items: [...editingOrder.items, giftItem]
+    });
+    setDiscountName("");
+    setDiscountQty(1);
+  };
+
   const [ledgerDateFilter, setLedgerDateFilter] = useState("");
   const [ledgerMonthFilter, setLedgerMonthFilter] = useState("");
 
@@ -2664,6 +2685,43 @@ export default function AdminPanel() {
                           <p className="text-[10px] text-slate-400 font-bold">Rs. {(item.price || 0).toLocaleString()}</p>
                         </button>
                       ))}
+                    </div>
+                  </div>
+
+                  <div className="pt-6 border-t border-slate-100">
+                    <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-4">Add Free Gift / Promotion</h4>
+                    <div className="bg-teal-50 p-4 rounded-2xl border border-teal-100 space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Item Name</label>
+                          <select
+                            value={discountName}
+                            onChange={(e) => setDiscountName(e.target.value)}
+                            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-teal-500"
+                          >
+                            <option value="">Select Item...</option>
+                            {inventory.map(p => (
+                              <option key={p.id} value={p.name}>{p.name}</option>
+                            ))}
+                            <option value="Special Custom Gift">Custom Gift...</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Quantity</label>
+                          <input
+                            type="number"
+                            value={discountQty}
+                            onChange={(e) => setDiscountQty(Number(e.target.value))}
+                            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-teal-500"
+                          />
+                        </div>
+                      </div>
+                      <button
+                        onClick={addFreeGiftToEditingOrder}
+                        className="w-full py-2 bg-teal-600 text-white rounded-xl font-bold text-xs hover:bg-teal-700 transition-all shadow-lg shadow-teal-200 flex items-center justify-center gap-2"
+                      >
+                        <Plus className="w-4 h-4" /> Add Free Gift to Order
+                      </button>
                     </div>
                   </div>
                 </div>
