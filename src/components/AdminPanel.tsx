@@ -288,10 +288,10 @@ export default function AdminPanel() {
 
       batch.update(doc(db, "orders", editingOrder.id), {
         items: editingOrder.items,
-        discountPercent: editingOrder.discountPercent,
-        balanceAdjustment: editingOrder.balanceAdjustment,
+        discountPercent: editingOrder.discountPercent ?? 0,
+        balanceAdjustment: editingOrder.balanceAdjustment ?? 0,
         totalAmount,
-        discount,
+        discount: discount ?? 0,
         finalAmount
       });
 
