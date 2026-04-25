@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { db, auth } from "../firebase";
-import { signOut, createUserWithEmailAndPassword, updateEmail, updatePassword, signInWithEmailAndPassword, deleteUser as deleteAuthUser } from "firebase/auth";
+import { signOut, createUserWithEmailAndPassword } from "firebase/auth";
 import { initializeApp, getApp, getApps } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { collection, onSnapshot, query, orderBy, doc, updateDoc, getDoc, setDoc, addDoc, deleteDoc, writeBatch } from "firebase/firestore";
@@ -613,26 +613,6 @@ export default function AdminPanel() {
 
   const deleteUser = async (userId: string) => {
     try {
-      const snap = await getDoc(doc(db, "franchiseUsers", userId));
-      if (snap.exists()) {
-        const userData = snap.data() as FranchiseUser;
-        const secondaryConfig = {
-          apiKey: "AIzaSyAakFasuwjBerQkZu6KVMzH1SE-c_F8qK0",
-          authDomain: "wedrink-2bf78.firebaseapp.com",
-          projectId: "wedrink-2bf78",
-          storageBucket: "wedrink-2bf78.firebasestorage.app",
-          messagingSenderId: "197930332464",
-          appId: "1:197930332464:web:7140973f02afa3a4c9d8f5",
-        };
-        const secondaryApp = getApps().find(app => app.name === 'secondary') || initializeApp(secondaryConfig, 'secondary');
-        const secondaryAuth = getAuth(secondaryApp);
-        try {
-          const userCred = await signInWithEmailAndPassword(secondaryAuth, userData.email, userData.password!);
-          await deleteAuthUser(userCred.user);
-        } catch (authError) {
-          console.error("Failed to delete from Auth:", authError);
-        }
-      }
       await deleteDoc(doc(db, "franchiseUsers", userId));
       setUserToDelete(null);
     } catch (error) {
@@ -642,50 +622,10 @@ export default function AdminPanel() {
 
   const updateUser = async (userId: string, updates: Partial<FranchiseUser>) => {
     try {
-      const snap = await getDoc(doc(db, "franchiseUsers", userId));
-      if (!snap.exists()) return;
-      const oldData = snap.data() as FranchiseUser;
-      // Email ya password change hone par Firebase Auth ke saath sync karein
-      if (updates.email !== oldData.email || updates.password !== oldData.password) {
-        const secondaryConfig = {
-          apiKey: "AIzaSyAakFasuwjBerQkZu6KVMzH1SE-c_F8qK0",
-          authDomain: "wedrink-2bf78.firebaseapp.com",
-          projectId: "wedrink-2bf78",
-          storageBucket: "wedrink-2bf78.firebasestorage.app",
-          messagingSenderId: "197930332464",
-          appId: "1:197930332464:web:7140973f02afa3a4c9d8f5",
-        };
-        const secondaryApp = getApps().find(app => app.name === 'secondary') || initializeApp(secondaryConfig, 'secondary');
-        const secondaryAuth = getAuth(secondaryApp);
-        try {
-          // User ko sign-in kar ke uske credentials update karein
-          const userCred = await signInWithEmailAndPassword(secondaryAuth, oldData.email, oldData.password!);
-          
-          if (updates.email && updates.email !== oldData.email) {
-            await updateEmail(userCred.user, updates.email.toLowerCase().trim());
-          }
-          
-          if (updates.password && updates.password !== oldData.password) {
-            await updatePassword(userCred.user, updates.password);
-          }
-          await signOut(secondaryAuth);
-        } catch (authError: any) {
-          console.error("Auth Sync Error:", authError);
-          // Agar user Auth mein nahi hai toh create karein
-          if (authError.code === 'auth/user-not-found') {
-            await createUserWithEmailAndPassword(secondaryAuth, (updates.email || oldData.email).toLowerCase().trim(), (updates.password || oldData.password)!);
-            await signOut(secondaryAuth);
-          } else {
-            throw new Error(`Auth sync failed: ${authError.message}`);
-          }
-        }
-      }
       await updateDoc(doc(db, "franchiseUsers", userId), updates);
       setEditingUser(null);
-      alert("User account updated successfully!");
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error updating user: ", error);
-      alert(error.message || "Failed to update user account.");
     }
   };
 
