@@ -1188,28 +1188,57 @@ export default function FranchisePortal() {
                     <div className="space-y-4 bg-slate-50 p-5 rounded-2xl border border-slate-100">
                       <div>
                         <p className="text-xs text-slate-400 font-bold uppercase mb-1">Bank Name</p>
-                        <p className="font-bold text-slate-900 text-lg">MEEZAN Bank</p>
+                        <p className="font-bold text-slate-900 text-lg">
+                          {selectedRegion?.accountDetails?.bankName || "JS Bank"}
+                        </p>
                       </div>
                       <div>
                         <p className="text-xs text-slate-400 font-bold uppercase mb-1">Account Title</p>
-                        <p className="font-bold text-slate-900 text-lg">DB LINK (PRIVATE) LIMITED</p>
+                        <p className="font-bold text-slate-900 text-lg">
+                          {selectedRegion?.accountDetails?.accountTitle || "Wedrink supply chain (SMC-PVT)Limited"}
+                        </p>
                       </div>
-                      <div>
-                        <p className="text-xs text-slate-400 font-bold uppercase mb-1">IBAN</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <p className="font-mono font-bold text-slate-900 text-base break-all bg-white p-3 rounded-xl border border-slate-200 flex-1">PK74MEZN0002460104429936</p>
-                          <button 
-                            onClick={() => {
-                              navigator.clipboard.writeText("PK74MEZN0002460104429936");
-                              alert("IBAN Copied!");
-                            }}
-                            className="p-3 bg-teal-50 text-teal-600 rounded-xl hover:bg-teal-100 transition-all"
-                            title="Copy IBAN"
-                          >
-                            <Copy className="w-5 h-5" />
-                          </button>
+                      {(selectedRegion?.accountDetails?.iban || !selectedRegion?.accountDetails) && (
+                        <div>
+                          <p className="text-xs text-slate-400 font-bold uppercase mb-1">IBAN</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <p className="font-mono font-bold text-slate-900 text-base break-all bg-white p-3 rounded-xl border border-slate-200 flex-1">
+                              {selectedRegion?.accountDetails?.iban || "PK07JSBL9557000002750554"}
+                            </p>
+                            <button 
+                              onClick={() => {
+                                const iban = selectedRegion?.accountDetails?.iban || "PK07JSBL9557000002750554";
+                                navigator.clipboard.writeText(iban);
+                                alert("IBAN Copied!");
+                              }}
+                              className="p-3 bg-teal-50 text-teal-600 rounded-xl hover:bg-teal-100 transition-all"
+                              title="Copy IBAN"
+                            >
+                              <Copy className="w-5 h-5" />
+                            </button>
+                          </div>
                         </div>
-                      </div>
+                      )}
+                      {selectedRegion?.accountDetails?.accountNumber && (
+                        <div>
+                          <p className="text-xs text-slate-400 font-bold uppercase mb-1">Account Number</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <p className="font-mono font-bold text-slate-900 text-base break-all bg-white p-3 rounded-xl border border-slate-200 flex-1">
+                              {selectedRegion?.accountDetails?.accountNumber}
+                            </p>
+                            <button 
+                              onClick={() => {
+                                navigator.clipboard.writeText(selectedRegion?.accountDetails?.accountNumber || "");
+                                alert("Account Number Copied!");
+                              }}
+                              className="p-3 bg-teal-50 text-teal-600 rounded-xl hover:bg-teal-100 transition-all"
+                              title="Copy Account Number"
+                            >
+                              <Copy className="w-5 h-5" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </motion.div>
 
