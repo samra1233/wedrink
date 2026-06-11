@@ -1,0 +1,90 @@
+{
+  "entities": {
+    "Order": {
+      "title": "Order",
+      "description": "Purchase orders from franchises",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "franchiseName": { "type": "string" },
+        "regionName": { "type": "string" },
+        "status": { "type": "string", "enum": ["Pending", "Processing", "Shipped", "Delivered", "Cancelled"] },
+        "totalAmount": { "type": "number" },
+        "discount": { "type": "number" },
+        "discountPercent": { "type": "number" },
+        "balanceAdjustment": { "type": "number" },
+        "finalAmount": { "type": "number" },
+        "date": { "type": "string", "format": "date-time" },
+        "userId": { "type": "string" },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "quantity": { "type": "number" },
+              "price": { "type": "number" }
+            }
+          }
+        }
+      },
+      "required": ["franchiseName", "status", "finalAmount", "userId", "date"]
+    },
+    "InventoryItem": {
+      "title": "Inventory Item",
+      "description": "Stock items in the warehouse",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "quantity": { "type": "number" },
+        "type": { "type": "string", "enum": ["raw", "equipment", "uniform"] }
+      },
+      "required": ["name", "quantity", "type"]
+    },
+    "AdminUser": {
+      "title": "Admin User",
+      "description": "Users with administrative access",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["super_admin", "admin"] },
+        "permissions": { "type": "object" }
+      },
+      "required": ["email", "role", "permissions"]
+    },
+    "FranchiseUser": {
+      "title": "Franchise User",
+      "description": "Users representing a franchise",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "regionId": { "type": "string" },
+        "franchiseId": { "type": "string" },
+        "balance": { "type": "number" }
+      },
+      "required": ["email", "regionId", "franchiseId"]
+    }
+  },
+  "firestore": {
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Collection of all purchase orders"
+    },
+    "/inventory/{itemId}": {
+      "schema": "InventoryItem",
+      "description": "Warehouse stock inventory"
+    },
+    "/adminUsers/{userId}": {
+      "schema": "AdminUser",
+      "description": "System administrators"
+    },
+    "/franchiseUsers/{userId}": {
+      "schema": "FranchiseUser",
+      "description": "Franchise owners/users"
+    }
+  }
+}
